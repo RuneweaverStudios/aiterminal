@@ -39,9 +39,12 @@ import { FilePicker } from '@/renderer/components/FilePicker'
 import { DiffView } from '@/renderer/components/DiffView'
 import { AgentApprovalPanel } from '@/renderer/components/AgentApprovalPanel'
 import { AgentMode } from '@/renderer/components/AgentMode'
+import { InternAvatar } from '@/renderer/components/InternAvatar'
 import { SplitSidebar } from '@/renderer/components/SplitSidebar'
 import { GatewayVoiceStrip } from '@/renderer/components/GatewayVoiceStrip'
 import { useAgentLoop } from '@/renderer/hooks/useAgentLoop'
+import { preloadVRMModels } from '@/renderer/vrm-preloader'
+import { AVAILABLE_VRM_MODELS } from '@/renderer/vrm-models'
 
 // Shell helpers
 import {
@@ -234,6 +237,8 @@ export const App: FC = () => {
           setTimeout(() => {
             window.electronAPI.getSessionCwd(sessionId).then((result) => {
               if (result.success && result.cwd) {
+                // Update session manager and trigger tab update
+                window.electronAPI.updateSessionCwd(sessionId, result.cwd);
                 setActiveTabCwd(result.cwd)
               }
             }).catch(() => {
@@ -453,6 +458,34 @@ export const App: FC = () => {
   }, [autocomplete.dismiss])
 
   // -------------------------------------------------------------------------
+  // VRM Preloading — background load on app mount for instant avatar display
+  // -------------------------------------------------------------------------
+
+  useEffect(() => {
+    // Start preloading all VRM models in background on app mount
+    const models = Object.entries(AVAILABLE_VRM_MODELS).map(([id, config]) => ({
+      id,
+      url: config.url
+    }))
+
+    console.log('[App] Starting VRM preload for', models.length, 'models')
+
+    preloadVRMModels(models, (progress) => {
+      console.log(`[App] VRM preload ${progress.modelId}: ${progress.status} (${progress.progress}%)`)
+    }).then(() => {
+      console.log('[App] VRM preload complete')
+    }).catch(err => {
+      console.error('[App] VRM preload failed:', err)
+    })
+
+    // Cleanup on unmount
+    return () => {
+      // Keep cached VRMs in memory for the session
+      // Only clear if app is shutting down
+    }
+  }, [])
+
+  // -------------------------------------------------------------------------
   // Derived state
   // -------------------------------------------------------------------------
 
@@ -639,6 +672,18 @@ export const App: FC = () => {
       {/* ═══════════════════════════════════════════════════════════════════ */}
       {/*  Overlays (z-index above everything)                              */}
       {/* ═══════════════════════════════════════════════════════════════════ */}
+
+      {/* Intern Avatar (shown when agent mode is enabled) */}
+      {agentLoop.enabled && (
+        <div className="intern-avatar-overlay">
+          <InternAvatar
+            intern={agentLoop.activeIntern || 'mei'}
+            isRunning={agentLoop.isRunning}
+            events={agentLoop.events}
+            showModelSelector={true}
+          />
+        </div>
+      )}
 
       {/* Cmd+K bar (centered, floating) */}
       <CmdKBar

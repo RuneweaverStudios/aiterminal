@@ -78,19 +78,28 @@ export class TerminalSessionManager {
    */
   createSession(options: CreateSessionOptions = {}): TerminalSession | null {
     const sessionId = randomUUID();
-    const shell = options.shell || process.env.SHELL || '/bin/zsh';
+    // Use bash explicitly for better compatibility
+    const shell = options.shell || process.env.SHELL || '/bin/bash';
+    // Normalize shell path to absolute, default to bash
+    const absoluteShell = shell.startsWith('/') ? shell : '/bin/bash';
     const cwd = options.cwd || process.env.HOME || '/';
     const cols = options.cols || 80;
     const rows = options.rows || 24;
 
     try {
-      // Spawn PTY
-      const ptyProcess = pty.spawn(shell, [], {
+      // Spawn PTY with explicit shell as login shell
+      const ptyProcess = pty.spawn(absoluteShell, ['--login'], {
         name: 'xterm-256color',
         cols,
         rows,
         cwd,
-        env: process.env as Record<string, string>,
+        env: {
+          ...process.env,
+          TERM: 'xterm-256color',
+          HOME: process.env.HOME || '/',
+          USER: process.env.USER || 'root',
+          PATH: process.env.PATH || '/usr/local/bin:/usr/bin:/bin',
+        } as Record<string, string>,
       });
 
       // Create bridge to renderer (with sessionId)

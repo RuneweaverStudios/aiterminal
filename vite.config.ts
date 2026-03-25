@@ -19,7 +19,12 @@ export default defineConfig({
   server: {
     port: 5173,
     strictPort: true,
+    fs: {
+      strict: false,
+      allow: ['../*.vrm']
+    }
   },
+  assetsInclude: ['**/*.vrm'],
   test: {
     globals: true,
     environment: "jsdom",

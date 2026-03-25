@@ -179,6 +179,7 @@ export interface ElectronAPI {
   writeToSession: (sessionId: string, data: string) => void;
   resizeSession: (sessionId: string, cols: number, rows: number) => void;
   getSessionCwd: (sessionId: string) => Promise<{ success: boolean; cwd?: string; error?: string }>;
+  updateSessionCwd: (sessionId: string, cwd: string) => void;
   onSessionCwdChanged: (callback: (data: { sessionId: string; cwd: string }) => void) => () => void;
 
   // --- Legacy PTY bridge (deprecated, for backward compatibility) ---

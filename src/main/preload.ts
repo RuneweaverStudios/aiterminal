@@ -177,6 +177,10 @@ const electronAPI: ElectronAPI = {
   getSessionCwd: (sessionId: string) =>
     ipcRenderer.invoke('get-session-cwd', sessionId),
 
+  updateSessionCwd: (sessionId: string, cwd: string) => {
+    ipcRenderer.send('update-session-cwd', sessionId, cwd);
+  },
+
   onSessionCwdChanged: (callback: (data: { sessionId: string; cwd: string }) => void) => {
     const handler = (_event: Electron.IpcRendererEvent, data: { sessionId: string; cwd: string }) => {
       callback(data);

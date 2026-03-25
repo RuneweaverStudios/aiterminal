@@ -434,6 +434,11 @@ export function setupAllHandlers(
     return { success: true, cwd };
   });
 
+  // Update session cwd (called by renderer after cd command)
+  ipc.on('update-session-cwd', (_event, sessionId: string, cwd: string) => {
+    getSessionManager()?.updateSessionCwd(sessionId, cwd);
+  });
+
   // ---------------------------------------------------------------------------
   // File operations
   // ---------------------------------------------------------------------------

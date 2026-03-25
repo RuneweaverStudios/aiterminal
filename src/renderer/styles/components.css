@@ -948,11 +948,97 @@
   font-weight: 500;
 }
 
+.avatar-description {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.4);
+  text-align: center;
+  max-width: 200px;
+  line-height: 1.4;
+}
+
 .avatar-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
   padding: 0 4px;
+  position: relative;
+}
+
+.avatar-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.intern-emoji {
+  font-size: 24px;
+}
+
+.avatar-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.avatar-settings-btn {
+  background: none;
+  border: none;
+  color: rgba(255, 255, 255, 0.4);
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 4px;
+  font-size: 14px;
+  transition: all 0.2s;
+}
+
+.avatar-settings-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.8);
+  transform: rotate(45deg);
+}
+
+.avatar-tooltip {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  width: 280px;
+  background: rgba(26, 26, 46, 0.95);
+  border: 1px solid;
+  border-radius: 8px;
+  padding: 12px;
+  backdrop-filter: blur(10px);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+  z-index: 1000;
+  animation: fadeIn 0.2s ease-out;
+  pointer-events: none;
+}
+
+.avatar-tooltip .tooltip-content strong {
+  display: block;
+  color: #fff;
+  margin-bottom: 4px;
+  font-size: 14px;
+}
+
+.avatar-tooltip .tooltip-content p {
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 12px;
+  margin: 0 0 8px 0;
+  line-height: 1.4;
+}
+
+.tooltip-specialties {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.specialty-tag {
+  font-size: 10px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.8);
 }
 
 .intern-name {
@@ -1026,6 +1112,16 @@
   animation: spin 1s linear infinite;
 }
 
+.loading-overlay.error {
+  background: rgba(255, 80, 80, 0.15);
+  border: 1px solid rgba(255, 80, 80, 0.3);
+}
+
+.loading-overlay.error p {
+  margin: 4px 0;
+  text-align: center;
+}
+
 @keyframes spin {
   to {
     transform: rotate(360deg);
@@ -1078,4 +1174,77 @@
 
 .intern-avatar[data-intern="hana"] .expression-value {
   color: #ffc56b;
+}
+
+/* ===== Avatar Canvas Fallback (emoji placeholder) ===== */
+
+.avatar-canvas-fallback {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(0, 0, 0, 0.3);
+  border-radius: 12px;
+  min-height: 200px;
+  animation: fadeIn 0.3s ease-out;
+}
+
+.avatar-emoji-large {
+  width: 120px;
+  height: 120px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 3px solid;
+  margin-bottom: 16px;
+  animation: pulseDot 3s ease-in-out infinite;
+}
+
+.emoji-main {
+  font-size: 64px;
+  line-height: 1;
+  filter: drop-shadow(0 4px 12px rgba(0, 0, 0, 0.3));
+}
+
+.avatar-info-text {
+  text-align: center;
+}
+
+.avatar-intern-name {
+  font-size: 20px;
+  font-weight: 700;
+  margin: 0 0 8px 0;
+  color: #fff;
+}
+
+.avatar-status {
+  font-size: 14px;
+  color: rgba(255, 255, 255, 0.7);
+  margin: 0 0 4px 0;
+}
+
+.avatar-hint {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.5);
+  margin: 8px 0 0 0;
+}
+
+.avatar-hint code {
+  background: rgba(255, 255, 255, 0.1);
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-family: 'SF Mono', 'Cascadia Code', monospace;
+}
+
+/* ===== Intern Avatar Overlay ===== */
+
+.intern-avatar-overlay {
+  position: fixed;
+  top: 60px;
+  right: 20px;
+  width: 320px;
+  z-index: 1000;
+  animation: aiReveal 0.3s ease-out;
 }

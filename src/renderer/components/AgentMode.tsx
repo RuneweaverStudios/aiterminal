@@ -26,14 +26,11 @@ export function AgentMode({
   status = 'idle'
 }: AgentModeProps) {
   const [showTooltip, setShowTooltip] = useState(false);
-  const [showAvatar, setShowAvatar] = useState(false);
 
   const handleToggle = useCallback(() => {
-    onToggle(!enabled);
-    if (!enabled) {
-      // Auto-show avatar when enabling
-      setShowAvatar(true);
-    }
+    const newState = !enabled;
+    console.log(`[AgentMode] Toggling: ${enabled} → ${newState}`);
+    onToggle(newState);
   }, [enabled, onToggle]);
 
   const internColors = {
@@ -82,18 +79,6 @@ export function AgentMode({
         </span>
       </button>
 
-      {/* Avatar toggle */}
-      {enabled && (
-        <button
-          onClick={() => setShowAvatar(!showAvatar)}
-          className={`titlebar-agent-mode__avatar-btn ${showAvatar ? 'titlebar-agent-mode__avatar-btn--active' : ''}`}
-          aria-label={showAvatar ? 'Hide Avatar' : 'Show Avatar'}
-          title={showAvatar ? '🎭 Hide Avatar' : '🎭 Show Avatar'}
-        >
-          🎭
-        </button>
-      )}
-
       {/* Info button with tooltip */}
       <div className="titlebar-agent-mode__info">
         <button
@@ -128,34 +113,6 @@ export function AgentMode({
           </div>
         )}
       </div>
-
-      {/* Avatar panel (shown when enabled) */}
-      {enabled && showAvatar && (
-        <div className="titlebar-agent-mode__avatar-panel">
-          <div className="titlebar-agent-mode__avatar-header">
-            <span className="titlebar-agent-mode__avatar-title">
-              {activeIntern ? internNames[activeIntern as keyof typeof internNames] : 'Agent'}
-            </span>
-            <span
-              className="titlebar-agent-mode__avatar-status"
-              style={{ color: activeIntern ? internColors[activeIntern as keyof typeof internColors] : '#6b7280' }}
-            >
-              {statusText[status]}
-            </span>
-          </div>
-          <div className="titlebar-agent-mode__avatar-preview">
-            {/* Avatar placeholder - will be replaced with VRM component */}
-            <div className="titlebar-agent-mode__avatar-placeholder">
-              <span className="titlebar-agent-mode__avatar-icon">
-                {activeIntern === 'mei' ? '💻' : activeIntern === 'sora' ? '🔬' : activeIntern === 'hana' ? '✍️' : '🤖'}
-              </span>
-              <span className="titlebar-agent-mode__avatar-text">
-                {activeIntern ? `${internNames[activeIntern as keyof typeof internNames]} is working...` : 'Agent ready'}
-              </span>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

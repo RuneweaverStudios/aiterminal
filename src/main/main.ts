@@ -113,7 +113,18 @@ function createWindow(): BrowserWindow {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: false,
+      webSecurity: false, // Allow loading VRM from cross-origin URLs
     },
+  });
+
+  // Set CORS headers for VRM loading
+  window.webContents.session.webRequest.onHeadersReceived((details, callback) => {
+    callback({
+      responseHeaders: {
+        ...details.responseHeaders,
+        'Access-Control-Allow-Origin': ['*'],
+      },
+    });
   });
 
   if (IS_DEV) {
