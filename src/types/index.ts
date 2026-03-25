@@ -220,6 +220,12 @@ export interface ElectronAPI {
   onAgentComplete: (callback: (data: { runId: string; result: any }) => void) => () => void;
   onAgentError: (callback: (data: { runId: string; error: string }) => void) => () => void;
 
+  // --- Agent mode: update system prompt with intern identity ---
+  updateInternSystemPrompt: (activeIntern: string | null) => Promise<{
+    success: boolean;
+    error?: string;
+  }>;
+
   // --- Transcript search and retrieval ---
   transcriptSearch: (query: string, limit?: number) => Promise<{
     success: boolean;

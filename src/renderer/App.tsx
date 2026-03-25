@@ -653,6 +653,18 @@ export const App: FC = () => {
               onInputChange={chat.setInputValue}
               onRemoveAttachment={chat.removeAttachment}
               onMentionTrigger={handleMentionTrigger}
+              avatarSection={
+                agentLoop.enabled && (
+                  <InternAvatar
+                    intern={agentLoop.activeIntern || 'mei'}
+                    isRunning={agentLoop.isRunning}
+                    events={agentLoop.events}
+                    showModelSelector={true}
+                    isStreaming={chat.state.isStreaming}
+                    hasInput={chat.state.inputValue.length > 0}
+                  />
+                )
+              }
             />
           </div>
         )}
@@ -672,18 +684,6 @@ export const App: FC = () => {
       {/* ═══════════════════════════════════════════════════════════════════ */}
       {/*  Overlays (z-index above everything)                              */}
       {/* ═══════════════════════════════════════════════════════════════════ */}
-
-      {/* Intern Avatar (shown when agent mode is enabled) */}
-      {agentLoop.enabled && (
-        <div className="intern-avatar-overlay">
-          <InternAvatar
-            intern={agentLoop.activeIntern || 'mei'}
-            isRunning={agentLoop.isRunning}
-            events={agentLoop.events}
-            showModelSelector={true}
-          />
-        </div>
-      )}
 
       {/* Cmd+K bar (centered, floating) */}
       <CmdKBar

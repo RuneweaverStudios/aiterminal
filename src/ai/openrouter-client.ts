@@ -118,7 +118,7 @@ function buildMessages(
 
 export class OpenRouterClient implements IAIClient {
   private readonly openai: OpenAI;
-  private readonly systemPrompt: string;
+  private systemPrompt: string;
   private activePresetName: string;
 
   constructor(config: AIServiceConfig) {
@@ -165,6 +165,18 @@ export class OpenRouterClient implements IAIClient {
 
   getActivePresetName(): string {
     return this.activePresetName;
+  }
+
+  // -------------------------------------------------------------------------
+  // Update system prompt (for agent mode)
+  // -------------------------------------------------------------------------
+
+  setSystemPrompt(systemPrompt: string): void {
+    this.systemPrompt = systemPrompt;
+  }
+
+  getSystemPrompt(): string {
+    return this.systemPrompt;
   }
 
   // -------------------------------------------------------------------------

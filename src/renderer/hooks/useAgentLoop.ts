@@ -144,6 +144,20 @@ export function useAgentLoop(options: UseAgentLoopOptions = {}): UseAgentLoopRet
     };
   }, [enabled]);
 
+  // Update AI system prompt when agent mode changes
+  useEffect(() => {
+    const updatePrompt = async () => {
+      try {
+        await window.electronAPI.updateInternSystemPrompt(enabled ? activeIntern : null);
+        console.log('[useAgentLoop] Updated system prompt for intern:', activeIntern);
+      } catch (error) {
+        console.error('[useAgentLoop] Failed to update system prompt:', error);
+      }
+    };
+
+    updatePrompt();
+  }, [enabled, activeIntern]);
+
   return {
     enabled,
     setEnabled,

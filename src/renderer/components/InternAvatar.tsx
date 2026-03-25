@@ -48,9 +48,12 @@ interface InternAvatarProps {
   events: AgentEvent[];
   onInternSelect?: (intern: string) => void;
   showModelSelector?: boolean;
+  // Chat interaction state for expression updates
+  isStreaming?: boolean;
+  hasInput?: boolean;
 }
 
-export function InternAvatar({ intern, isRunning, events, onInternSelect, showModelSelector = false }: InternAvatarProps) {
+export function InternAvatar({ intern, isRunning, events, onInternSelect, showModelSelector = false, isStreaming = false, hasInput = false }: InternAvatarProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const vrmRef = useRef<any>(null);
   const vrmInitializedRef = useRef(false); // Track if VRM is initialized to prevent re-renders
@@ -119,39 +122,114 @@ export function InternAvatar({ intern, isRunning, events, onInternSelect, showMo
         const scene = new THREE.Scene();
         scene.background = new THREE.Color(0x1a1a2e);
 
+        // Camera positioned for facial expressions - ZOOMED IN
         const camera = new THREE.PerspectiveCamera(
           30,
           container.clientWidth / container.clientHeight,
           0.1,
           20
         );
-        camera.position.set(0, 1.4, 4);
+        camera.position.set(0, 1.7, 1.0); // Closer and higher to fill frame with face
 
         const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
         renderer.setSize(container.clientWidth, container.clientHeight);
         renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        renderer.setPixelRatio(window.devicePixelRatio);
         container.appendChild(renderer.domElement);
 
         const controls = new OrbitControls(camera, renderer.domElement);
-        controls.target.set(0, 1.4, 0);
-        controls.enableZoom = false;
-        controls.enablePan = false;
+        controls.target.set(0, 1.75, 0); // Higher target - focus on face
+        controls.enableZoom = true; // Enable zoom
+        controls.enablePan = false; // Pan only with Ctrl+drag
+        controls.minDistance = 0.5; // Allow much closer zoom
+        controls.maxDistance = 10.0; // Allow zooming out more
+        controls.keys = {
+          LEFT: '' as any,  // Disable arrow keys
+          UP: '' as any,
+          RIGHT: '' as any,
+          BOTTOM: '' as any
+        };
+
+        // Ctrl+drag to pan, regular drag to rotate
+        const handleKeyDown = (e: KeyboardEvent) => {
+          if (e.ctrlKey || e.metaKey) {
+            controls.enablePan = true;
+          }
+        };
+        const handleKeyUp = (e: KeyboardEvent) => {
+          if (!e.ctrlKey && !e.metaKey) {
+            controls.enablePan = false;
+          }
+        };
+
+        window.addEventListener('keydown', handleKeyDown);
+        window.addEventListener('keyup', handleKeyUp);
+
         controls.update();
 
-        // Lighting
-        const light = new THREE.DirectionalLight(0xffffff, 1.5);
+        // Lighting optimized for face visibility
+        const light = new THREE.DirectionalLight(0xffffff, 2.0);
         light.position.set(2, 3, 5);
         scene.add(light);
 
-        const ambientLight = new THREE.AmbientLight(0x888888, 0.8);
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
         scene.add(ambientLight);
 
-        const backLight = new THREE.DirectionalLight(0x6688cc, 0.5);
-        backLight.position.set(-2, 2, -5);
-        scene.add(backLight);
+        const fillLight = new THREE.DirectionalLight(0xffeeb1, 0.5);
+        fillLight.position.set(-2, 1, 3);
+        scene.add(fillLight);
 
-        // Clone the VRM model scene for this instance
-        scene.add(vrmModel.scene.clone(true));
+        const rimLight = new THREE.DirectionalLight(0x6688cc, 0.4);
+        rimLight.position.set(0, 2, -4);
+        scene.add(rimLight);
+
+        // Add VRM model to scene
+        // Tilt forward 10 degrees for conversational pose
+        vrmModel.scene.rotation.y = Math.PI; // Face forward
+        vrmModel.scene.rotation.x = -0.17; // Tilt forward ~10° (conversational pose)
+        scene.add(vrmModel.scene);
+
+        // ===== FIX T-POSE: Set natural resting pose =====
+        // Store resting pose bones to maintain every frame
+        const restingPose = {
+          leftUpperArm: vrmModel.humanoid?.getNormalizedBoneNode('leftUpperArm'),
+          leftLowerArm: vrmModel.humanoid?.getNormalizedBoneNode('leftLowerArm'),
+          leftHand: vrmModel.humanoid?.getNormalizedBoneNode('leftHand'),
+          rightUpperArm: vrmModel.humanoid?.getNormalizedBoneNode('rightUpperArm'),
+          rightLowerArm: vrmModel.humanoid?.getNormalizedBoneNode('rightLowerArm'),
+          rightHand: vrmModel.humanoid?.getNormalizedBoneNode('rightHand'),
+          leftShoulder: vrmModel.humanoid?.getNormalizedBoneNode('leftShoulder'),
+          rightShoulder: vrmModel.humanoid?.getNormalizedBoneNode('rightShoulder'),
+        };
+
+        // Debug: Log which bones exist
+        console.log('[InternAvatar] Available bones:', {
+          hasLeftUpperArm: !!restingPose.leftUpperArm,
+          hasRightUpperArm: !!restingPose.rightUpperArm,
+          hasLeftLowerArm: !!restingPose.leftLowerArm,
+          hasRightLowerArm: !!restingPose.rightLowerArm,
+          hasLeftShoulder: !!restingPose.leftShoulder,
+          hasRightShoulder: !!restingPose.rightShoulder,
+        });
+
+        // Create animation mixer and play idle animation
+        const mixer = new THREE.AnimationMixer(vrmModel.scene);
+        const clock = new THREE.Clock();
+
+        // Try to play idle animation if available
+        const animations = vrmModel.scene.animations;
+        if (animations && animations.length > 0) {
+          console.log(`[InternAvatar] Found ${animations.length} animations in VRM model`);
+          // Find idle animation or use first animation
+          const idleAnimation = animations.find((a: any) => a.name.toLowerCase().includes('idle')) || animations[0];
+          if (idleAnimation) {
+            const action = mixer.clipAction(idleAnimation);
+            action.play();
+            console.log(`[InternAvatar] Playing animation: ${idleAnimation.name}`);
+          }
+        } else {
+          console.log('[InternAvatar] No animations found in VRM model');
+        }
 
         vrmRef.current = {
           vrm: vrmModel,
@@ -160,7 +238,10 @@ export function InternAvatar({ intern, isRunning, events, onInternSelect, showMo
           scene,
           camera,
           renderer,
-          controls
+          controls,
+          mixer,
+          clock,
+          restingPose
         };
 
         vrmInitializedRef.current = true;
@@ -171,35 +252,149 @@ export function InternAvatar({ intern, isRunning, events, onInternSelect, showMo
         vrmModel.expressionManager.setValue(VRMExpressionPresetName.Neutral, 1);
 
         // Animation loop
-        const clock = new THREE.Clock();
         let idleTimer = 0;
         let idleIndex = 0;
+        let blinkTimer = 0;
+        let isBlinking = false;
 
         const animate = () => {
           requestAnimationFrame(animate);
           const delta = clock.getDelta();
+          const elapsed = clock.getElapsedTime();
 
           if (vrmModel) {
             vrmModel.update(delta);
+            mixer.update(delta); // Update VRM animations
 
-            // Idle breathing animation
+            // ===== PROCEDURAL IDLE ANIMATIONS =====
             if (vrmModel.humanoid) {
-              const breath = Math.sin(clock.elapsedTime * 2) * 0.03;
-              vrmModel.humanoid.getNormalizedBoneNode('chest')!.rotation.x = breath;
+              // Breathing animation - chest and spine
+              const breathIntensity = 0.04;
+              const breathSpeed = 1.5;
+              const breath = Math.sin(elapsed * breathSpeed) * breathIntensity;
+
+              // Apply breathing to chest
+              const chest = vrmModel.humanoid.getNormalizedBoneNode('chest');
+              if (chest) {
+                chest.rotation.x = breath * 0.7;
+              }
+
+              // Apply subtle breathing to spine
+              const spine = vrmModel.humanoid.getNormalizedBoneNode('spine');
+              if (spine) {
+                spine.rotation.x = breath * 0.3;
+              }
+
+              // Subtle head movement - looking around slightly
+              const headMoveIntensity = 0.03;
+              const headMoveSpeed = 0.8;
+              const headYaw = Math.sin(elapsed * headMoveSpeed) * headMoveIntensity;
+              const headPitch = Math.cos(elapsed * headMoveSpeed * 0.7) * headMoveIntensity * 0.5;
+
+              const head = vrmModel.humanoid.getNormalizedBoneNode('head');
+              if (head) {
+                head.rotation.y = headYaw;
+                head.rotation.x = headPitch;
+              }
+
+              // Arm sway - adds life while maintaining resting pose
+              const armSwayIntensity = 0.015;
+              const armSwaySpeed = 1.0;
+              const armSway = Math.sin(elapsed * armSwaySpeed) * armSwayIntensity;
+
+              // ===== MAINTAIN RESTING POSE EVERY FRAME =====
+              // T-pose has arms horizontal - need Z-axis rotation to bring them DOWN
+              if (restingPose.leftShoulder) {
+                restingPose.leftShoulder.rotation.x = 0.1;
+              }
+              if (restingPose.rightShoulder) {
+                restingPose.rightShoulder.rotation.x = 0.1;
+              }
+
+              // Left arm - rotate DOWN from T-pose (Z-axis: horizontal → vertical)
+              if (restingPose.leftUpperArm) {
+                restingPose.leftUpperArm.rotation.set(
+                  0,  // x
+                  0,  // y
+                  1.3 + armSway  // z - bring arm down to side (~75°)
+                );
+              }
+
+              // Right arm - rotate DOWN from T-pose
+              if (restingPose.rightUpperArm) {
+                restingPose.rightUpperArm.rotation.set(
+                  0,  // x
+                  0,  // y
+                  -1.3 - armSway  // z - bring arm down to side (~75°)
+                );
+              }
+
+              // Lower arms - bend at elbow
+              if (restingPose.leftLowerArm) {
+                restingPose.leftLowerArm.rotation.x = 0.3 + Math.sin(elapsed * 0.9) * 0.02;
+              }
+              if (restingPose.rightLowerArm) {
+                restingPose.rightLowerArm.rotation.x = 0.3 + Math.cos(elapsed * 0.9) * 0.02;
+              }
+
+              // Hands - relaxed wrists
+              if (restingPose.leftHand) {
+                restingPose.leftHand.rotation.z = 0.5;
+              }
+              if (restingPose.rightHand) {
+                restingPose.rightHand.rotation.z = -0.5;
+              }
+
+              // Very subtle body sway
+              const hips = vrmModel.humanoid.getNormalizedBoneNode('hips');
+              if (hips) {
+                hips.rotation.y = Math.sin(elapsed * 0.5) * 0.01;
+              }
             }
 
-            // Idle expression cycling
-            idleTimer += delta * 1000;
-            if (idleTimer > IDLE_INTERVAL && !isRunning) {
-              idleTimer = 0;
-              idleIndex = (idleIndex + 1) % IDLE_EXPRESSIONS.length;
-              const idleExpr = IDLE_EXPRESSIONS[idleIndex];
-              // Apply idle expression subtly
-              Object.values(VRMExpressionPresetName).forEach((preset: any) => {
-                vrmModel.expressionManager.setValue(preset, 0);
-              });
-              if (idleExpr === 'blink') {
-                vrmModel.expressionManager.setValue(VRMExpressionPresetName.Blink, 0.5);
+            // ===== AUTOMATIC BLINKING =====
+            blinkTimer += delta;
+            if (!isBlinking && blinkTimer > 3 + Math.random() * 2) {
+              // Start blink
+              isBlinking = true;
+              blinkTimer = 0;
+
+              // Quick blink animation
+              let blinkProgress = 0;
+              const blinkDuration = 0.15; // 150ms blink
+
+              const doBlink = () => {
+                blinkProgress += delta;
+                const blinkValue = Math.sin(blinkProgress / blinkDuration * Math.PI);
+
+                vrmModel.expressionManager.setValue(VRMExpressionPresetName.Blink, blinkValue);
+
+                if (blinkProgress < blinkDuration) {
+                  requestAnimationFrame(doBlink);
+                } else {
+                  isBlinking = false;
+                  vrmModel.expressionManager.setValue(VRMExpressionPresetName.Blink, 0);
+                }
+              };
+              doBlink();
+            }
+
+            // Idle expression cycling (when not interacting)
+            if (!isStreaming && !hasInput && !isRunning) {
+              idleTimer += delta * 1000;
+              if (idleTimer > IDLE_INTERVAL) {
+                idleTimer = 0;
+                idleIndex = (idleIndex + 1) % IDLE_EXPRESSIONS.length;
+                const idleExpr = IDLE_EXPRESSIONS[idleIndex];
+                // Apply idle expression subtly
+                if (idleExpr === 'blink') {
+                  // Skip since we have automatic blinking
+                } else if (idleExpr === 'neutral') {
+                  Object.values(VRMExpressionPresetName).forEach((preset: any) => {
+                    vrmModel.expressionManager.setValue(preset, 0);
+                  });
+                  vrmModel.expressionManager.setValue(VRMExpressionPresetName.Neutral, 1);
+                }
               }
             }
           }
@@ -220,6 +415,8 @@ export function InternAvatar({ intern, isRunning, events, onInternSelect, showMo
 
         cleanup = () => {
           window.removeEventListener('resize', handleResize);
+          window.removeEventListener('keydown', handleKeyDown);
+          window.removeEventListener('keyup', handleKeyUp);
           // Dispose renderer but let React handle DOM cleanup
           if (renderer.domElement && renderer.domElement.parentNode) {
             renderer.domElement.parentNode.removeChild(renderer.domElement);
@@ -246,30 +443,59 @@ export function InternAvatar({ intern, isRunning, events, onInternSelect, showMo
         0.1,
         20
       );
-      camera.position.set(0, 1.4, 4);
+      camera.position.set(0, 1.7, 1.0); // Closer and higher to fill frame with face
 
       const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
       renderer.setSize(container.clientWidth, container.clientHeight);
       renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+      renderer.setPixelRatio(window.devicePixelRatio);
       container.appendChild(renderer.domElement);
 
       const controls = new OrbitControls(camera, renderer.domElement);
-      controls.target.set(0, 1.4, 0);
-      controls.enableZoom = false;
-      controls.enablePan = false;
+      controls.target.set(0, 1.75, 0); // Higher target - focus on face
+      controls.enableZoom = true; // Enable zoom
+      controls.enablePan = false; // Pan only with Ctrl+drag
+      controls.minDistance = 0.5; // Allow much closer zoom
+      controls.maxDistance = 10.0; // Allow zooming out more
+      controls.keys = {
+        LEFT: '' as any,  // Disable arrow keys
+        UP: '' as any,
+        RIGHT: '' as any,
+        BOTTOM: '' as any
+      };
+
+      // Ctrl+drag to pan, regular drag to rotate
+      const handleKeyDown = (e: KeyboardEvent) => {
+        if (e.ctrlKey || e.metaKey) {
+          controls.enablePan = true;
+        }
+      };
+      const handleKeyUp = (e: KeyboardEvent) => {
+        if (!e.ctrlKey && !e.metaKey) {
+          controls.enablePan = false;
+        }
+      };
+
+      window.addEventListener('keydown', handleKeyDown);
+      window.addEventListener('keyup', handleKeyUp);
+
       controls.update();
 
-      // Lighting
-      const light = new THREE.DirectionalLight(0xffffff, 1.5);
+      // Lighting optimized for face visibility
+      const light = new THREE.DirectionalLight(0xffffff, 2.0);
       light.position.set(2, 3, 5);
       scene.add(light);
 
-      const ambientLight = new THREE.AmbientLight(0x888888, 0.8);
+      const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
       scene.add(ambientLight);
 
-      const backLight = new THREE.DirectionalLight(0x6688cc, 0.5);
-      backLight.position.set(-2, 2, -5);
-      scene.add(backLight);
+      const fillLight = new THREE.DirectionalLight(0xffeeb1, 0.5);
+      fillLight.position.set(-2, 1, 3);
+      scene.add(fillLight);
+
+      const rimLight = new THREE.DirectionalLight(0x6688cc, 0.4);
+      rimLight.position.set(0, 2, -4);
+      scene.add(rimLight);
 
       // Load VRM model from config
       const loader = new GLTFLoader();
@@ -313,7 +539,49 @@ export function InternAvatar({ intern, isRunning, events, onInternSelect, showMo
         });
 
         vrmModel.scene.rotation.y = Math.PI; // Face forward
+        vrmModel.scene.rotation.x = -0.17; // Tilt forward ~10° (conversational pose)
         scene.add(vrmModel.scene);
+
+        // ===== FIX T-POSE: Set natural resting pose =====
+        // Store resting pose bones to maintain every frame
+        const restingPose = {
+          leftUpperArm: vrmModel.humanoid?.getNormalizedBoneNode('leftUpperArm'),
+          leftLowerArm: vrmModel.humanoid?.getNormalizedBoneNode('leftLowerArm'),
+          leftHand: vrmModel.humanoid?.getNormalizedBoneNode('leftHand'),
+          rightUpperArm: vrmModel.humanoid?.getNormalizedBoneNode('rightUpperArm'),
+          rightLowerArm: vrmModel.humanoid?.getNormalizedBoneNode('rightLowerArm'),
+          rightHand: vrmModel.humanoid?.getNormalizedBoneNode('rightHand'),
+          leftShoulder: vrmModel.humanoid?.getNormalizedBoneNode('leftShoulder'),
+          rightShoulder: vrmModel.humanoid?.getNormalizedBoneNode('rightShoulder'),
+        };
+
+        // Debug: Log which bones exist
+        console.log('[InternAvatar] Available bones:', {
+          hasLeftUpperArm: !!restingPose.leftUpperArm,
+          hasRightUpperArm: !!restingPose.rightUpperArm,
+          hasLeftLowerArm: !!restingPose.leftLowerArm,
+          hasRightLowerArm: !!restingPose.rightLowerArm,
+          hasLeftShoulder: !!restingPose.leftShoulder,
+          hasRightShoulder: !!restingPose.rightShoulder,
+        });
+
+        // Create animation mixer and play idle animation
+        const mixer = new THREE.AnimationMixer(vrmModel.scene);
+        const clock = new THREE.Clock();
+
+        // Try to play idle animation if available
+        const animations = vrmModel.scene.animations;
+        if (animations && animations.length > 0) {
+          console.log(`[InternAvatar] Found ${animations.length} animations in VRM model`);
+          const idleAnimation = animations.find((a: any) => a.name.toLowerCase().includes('idle')) || animations[0];
+          if (idleAnimation) {
+            const action = mixer.clipAction(idleAnimation);
+            action.play();
+            console.log(`[InternAvatar] Playing animation: ${idleAnimation.name}`);
+          }
+        } else {
+          console.log('[InternAvatar] No animations found in VRM model');
+        }
 
         vrmRef.current = {
           vrm: vrmModel,
@@ -322,7 +590,9 @@ export function InternAvatar({ intern, isRunning, events, onInternSelect, showMo
           scene,
           camera,
           renderer,
-          controls
+          controls,
+          mixer,
+          clock
         };
 
         vrmInitializedRef.current = true;
@@ -333,35 +603,149 @@ export function InternAvatar({ intern, isRunning, events, onInternSelect, showMo
         vrmModel.expressionManager.setValue(VRMExpressionPresetName.Neutral, 1);
 
         // Animation loop
-        const clock = new THREE.Clock();
         let idleTimer = 0;
         let idleIndex = 0;
+        let blinkTimer = 0;
+        let isBlinking = false;
 
         const animate = () => {
           requestAnimationFrame(animate);
           const delta = clock.getDelta();
+          const elapsed = clock.getElapsedTime();
 
           if (vrmModel) {
             vrmModel.update(delta);
+            mixer.update(delta); // Update VRM animations
 
-            // Idle breathing animation
+            // ===== PROCEDURAL IDLE ANIMATIONS =====
             if (vrmModel.humanoid) {
-              const breath = Math.sin(clock.elapsedTime * 2) * 0.03;
-              vrmModel.humanoid.getNormalizedBoneNode('chest')!.rotation.x = breath;
+              // Breathing animation - chest and spine
+              const breathIntensity = 0.04;
+              const breathSpeed = 1.5;
+              const breath = Math.sin(elapsed * breathSpeed) * breathIntensity;
+
+              // Apply breathing to chest
+              const chest = vrmModel.humanoid.getNormalizedBoneNode('chest');
+              if (chest) {
+                chest.rotation.x = breath * 0.7;
+              }
+
+              // Apply subtle breathing to spine
+              const spine = vrmModel.humanoid.getNormalizedBoneNode('spine');
+              if (spine) {
+                spine.rotation.x = breath * 0.3;
+              }
+
+              // Subtle head movement - looking around slightly
+              const headMoveIntensity = 0.03;
+              const headMoveSpeed = 0.8;
+              const headYaw = Math.sin(elapsed * headMoveSpeed) * headMoveIntensity;
+              const headPitch = Math.cos(elapsed * headMoveSpeed * 0.7) * headMoveIntensity * 0.5;
+
+              const head = vrmModel.humanoid.getNormalizedBoneNode('head');
+              if (head) {
+                head.rotation.y = headYaw;
+                head.rotation.x = headPitch;
+              }
+
+              // Arm sway - adds life while maintaining resting pose
+              const armSwayIntensity = 0.015;
+              const armSwaySpeed = 1.0;
+              const armSway = Math.sin(elapsed * armSwaySpeed) * armSwayIntensity;
+
+              // ===== MAINTAIN RESTING POSE EVERY FRAME =====
+              // T-pose has arms horizontal - need Z-axis rotation to bring them DOWN
+              if (restingPose.leftShoulder) {
+                restingPose.leftShoulder.rotation.x = 0.1;
+              }
+              if (restingPose.rightShoulder) {
+                restingPose.rightShoulder.rotation.x = 0.1;
+              }
+
+              // Left arm - rotate DOWN from T-pose (Z-axis: horizontal → vertical)
+              if (restingPose.leftUpperArm) {
+                restingPose.leftUpperArm.rotation.set(
+                  0,  // x
+                  0,  // y
+                  1.3 + armSway  // z - bring arm down to side (~75°)
+                );
+              }
+
+              // Right arm - rotate DOWN from T-pose
+              if (restingPose.rightUpperArm) {
+                restingPose.rightUpperArm.rotation.set(
+                  0,  // x
+                  0,  // y
+                  -1.3 - armSway  // z - bring arm down to side (~75°)
+                );
+              }
+
+              // Lower arms - bend at elbow
+              if (restingPose.leftLowerArm) {
+                restingPose.leftLowerArm.rotation.x = 0.3 + Math.sin(elapsed * 0.9) * 0.02;
+              }
+              if (restingPose.rightLowerArm) {
+                restingPose.rightLowerArm.rotation.x = 0.3 + Math.cos(elapsed * 0.9) * 0.02;
+              }
+
+              // Hands - relaxed wrists
+              if (restingPose.leftHand) {
+                restingPose.leftHand.rotation.z = 0.5;
+              }
+              if (restingPose.rightHand) {
+                restingPose.rightHand.rotation.z = -0.5;
+              }
+
+              // Very subtle body sway
+              const hips = vrmModel.humanoid.getNormalizedBoneNode('hips');
+              if (hips) {
+                hips.rotation.y = Math.sin(elapsed * 0.5) * 0.01;
+              }
             }
 
-            // Idle expression cycling
-            idleTimer += delta * 1000;
-            if (idleTimer > IDLE_INTERVAL && !isRunning) {
-              idleTimer = 0;
-              idleIndex = (idleIndex + 1) % IDLE_EXPRESSIONS.length;
-              const idleExpr = IDLE_EXPRESSIONS[idleIndex];
-              // Apply idle expression subtly
-              Object.values(VRMExpressionPresetName).forEach((preset: any) => {
-                vrmModel.expressionManager.setValue(preset, 0);
-              });
-              if (idleExpr === 'blink') {
-                vrmModel.expressionManager.setValue(VRMExpressionPresetName.Blink, 0.5);
+            // ===== AUTOMATIC BLINKING =====
+            blinkTimer += delta;
+            if (!isBlinking && blinkTimer > 3 + Math.random() * 2) {
+              // Start blink
+              isBlinking = true;
+              blinkTimer = 0;
+
+              // Quick blink animation
+              let blinkProgress = 0;
+              const blinkDuration = 0.15; // 150ms blink
+
+              const doBlink = () => {
+                blinkProgress += delta;
+                const blinkValue = Math.sin(blinkProgress / blinkDuration * Math.PI);
+
+                vrmModel.expressionManager.setValue(VRMExpressionPresetName.Blink, blinkValue);
+
+                if (blinkProgress < blinkDuration) {
+                  requestAnimationFrame(doBlink);
+                } else {
+                  isBlinking = false;
+                  vrmModel.expressionManager.setValue(VRMExpressionPresetName.Blink, 0);
+                }
+              };
+              doBlink();
+            }
+
+            // Idle expression cycling (when not interacting)
+            if (!isStreaming && !hasInput && !isRunning) {
+              idleTimer += delta * 1000;
+              if (idleTimer > IDLE_INTERVAL) {
+                idleTimer = 0;
+                idleIndex = (idleIndex + 1) % IDLE_EXPRESSIONS.length;
+                const idleExpr = IDLE_EXPRESSIONS[idleIndex];
+                // Apply idle expression subtly
+                if (idleExpr === 'blink') {
+                  // Skip since we have automatic blinking
+                } else if (idleExpr === 'neutral') {
+                  Object.values(VRMExpressionPresetName).forEach((preset: any) => {
+                    vrmModel.expressionManager.setValue(preset, 0);
+                  });
+                  vrmModel.expressionManager.setValue(VRMExpressionPresetName.Neutral, 1);
+                }
               }
             }
           }
@@ -382,6 +766,8 @@ export function InternAvatar({ intern, isRunning, events, onInternSelect, showMo
 
         cleanup = () => {
           window.removeEventListener('resize', handleResize);
+          window.removeEventListener('keydown', handleKeyDown);
+          window.removeEventListener('keyup', handleKeyUp);
           // Dispose renderer but let React handle DOM cleanup
           if (renderer.domElement && renderer.domElement.parentNode) {
             renderer.domElement.parentNode.removeChild(renderer.domElement);
@@ -451,7 +837,7 @@ export function InternAvatar({ intern, isRunning, events, onInternSelect, showMo
 
     // Auto-reset to neutral after 3 seconds
     const timer = setTimeout(() => {
-      if (vrmRef.current && !isRunning) {
+      if (vrmRef.current && !isRunning && !isStreaming) {
         Object.values(VRMExpressionPresetName).forEach((preset: any) => {
           vrmRef.current.expressionManager.setValue(preset, 0);
         });
@@ -462,7 +848,39 @@ export function InternAvatar({ intern, isRunning, events, onInternSelect, showMo
 
     return () => clearTimeout(timer);
 
-  }, [events, isRunning]);
+  }, [events, isRunning, isStreaming]);
+
+  // Update expression based on chat interactions (typing, streaming)
+  useEffect(() => {
+    if (!vrmRef.current) return;
+
+    const { expressionManager, VRMExpressionPresetName } = vrmRef.current;
+
+    // Chat state takes priority for expressions
+    if (isStreaming) {
+      // AI is responding - look happy/engaged
+      Object.values(VRMExpressionPresetName).forEach((preset: any) => {
+        expressionManager.setValue(preset, 0);
+      });
+      expressionManager.setValue(VRMExpressionPresetName.Happy, 0.8);
+      setCurrentExpression('happy');
+    } else if (hasInput) {
+      // User is typing - look thoughtful/concentrating
+      Object.values(VRMExpressionPresetName).forEach((preset: any) => {
+        expressionManager.setValue(preset, 0);
+      });
+      expressionManager.setValue(VRMExpressionPresetName.Aa, 0.6);
+      setCurrentExpression('aa');
+    } else if (!isRunning) {
+      // Idle - reset to neutral
+      Object.values(VRMExpressionPresetName).forEach((preset: any) => {
+        expressionManager.setValue(preset, 0);
+      });
+      expressionManager.setValue(VRMExpressionPresetName.Neutral, 1);
+      setCurrentExpression('neutral');
+    }
+
+  }, [isStreaming, hasInput, isRunning]);
 
   if (!intern) {
     return (

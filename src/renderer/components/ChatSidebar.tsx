@@ -27,6 +27,8 @@ export interface ChatSidebarProps {
   readonly onInputChange: (value: string) => void
   readonly onRemoveAttachment: (path: string) => void
   readonly onMentionTrigger: () => void
+  // Avatar integration
+  readonly avatarSection?: React.ReactNode
 }
 
 // ---------------------------------------------------------------------------
@@ -42,6 +44,7 @@ export const ChatSidebar: FC<ChatSidebarProps> = ({
   onInputChange,
   onRemoveAttachment,
   onMentionTrigger,
+  avatarSection,
 }) => {
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const messagesContainerRef = useRef<HTMLDivElement>(null)
@@ -134,7 +137,7 @@ export const ChatSidebar: FC<ChatSidebarProps> = ({
 
   return (
     <div
-      className="chat-sidebar"
+      className={`chat-sidebar${avatarSection ? ' chat-sidebar--with-avatar' : ''}`}
       data-testid="chat-sidebar"
     >
       {/* Resize handle on left edge */}
@@ -142,6 +145,13 @@ export const ChatSidebar: FC<ChatSidebarProps> = ({
         className="chat-resize-handle"
         onMouseDown={handleResizeMouseDown}
       />
+
+      {/* Avatar section (split panel) */}
+      {avatarSection && (
+        <div className="chat-avatar-section">
+          {avatarSection}
+        </div>
+      )}
 
       {/* Header */}
       <div className="chat-header">

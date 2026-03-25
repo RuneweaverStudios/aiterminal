@@ -31,6 +31,7 @@ import { setupAllHandlers, type SessionManagerRef } from './ipc-handlers.js';
 import { kokoroTtsService } from './kokoro-service.js';
 import { TerminalSessionManager } from './terminal-session-manager.js';
 import { DaemonBridge, registerDaemonIpc } from './daemon-bridge.js';
+import { buildInternSystemPrompt } from '../intern-config.js';
 import './agent-loop-handlers.js';
 import './transcript-handlers.js';
 
@@ -172,6 +173,23 @@ app.whenReady().then(() => {
 
   const sessionManager = new TerminalSessionManager(window);
   sessionManagerRef.current = sessionManager;
+
+  // Agent mode: update system prompt with intern identity
+  ipcMain.handle('update-intern-system-prompt', async (_event, activeIntern: string | null) => {
+    if (!aiClient) {
+      return { success: false, error: 'AI client not initialized' };
+    }
+
+    try {
+      const newPrompt = buildInternSystemPrompt(activeIntern);
+      aiClient.setSystemPrompt(newPrompt);
+      console.log('[main] Updated system prompt for intern:', activeIntern);
+      return { success: true };
+    } catch (error) {
+      console.error('[main] Failed to update system prompt:', error);
+      return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+    }
+  });
 
   setupAllHandlers(ipcMain, window, sessionManagerRef, client);
 

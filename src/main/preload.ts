@@ -272,6 +272,10 @@ const electronAPI: ElectronAPI = {
     };
   },
 
+  // --- Agent mode: update system prompt with intern identity ---
+  updateInternSystemPrompt: (activeIntern: string | null) =>
+    ipcRenderer.invoke('update-intern-system-prompt', activeIntern),
+
   // --- Transcript search and retrieval ---
   transcriptSearch: (query: string, limit?: number) =>
     ipcRenderer.invoke('transcript:search', query, limit),
