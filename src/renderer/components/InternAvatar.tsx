@@ -62,7 +62,7 @@ export function InternAvatar({ intern, isRunning, events, onInternSelect, showMo
   const [modelError, setModelError] = useState<string | null>(null);
   const [showTooltip, setShowTooltip] = useState(false);
   const [showSelector, setShowSelector] = useState(false);
-  const [cursorPosition, setCursorPosition] = useState({ x: 0, y: 0 });
+  const [cursorPosition, setCursorPosition] = useState({ x: window.innerWidth / 2, y: window.innerHeight / 2 });
 
   // Use default model if no intern specified
   const currentModel = getModelForIntern(intern);
@@ -307,9 +307,8 @@ export function InternAvatar({ intern, isRunning, events, onInternSelect, showMo
                 const normalizedX = deltaX / (window.innerWidth / 2);
                 const normalizedY = deltaY / (window.innerHeight / 2);
 
-                // With 180° scene rotation, need to flip X direction
-                // Cursor left (negative X) should make head look left
-                const targetYaw = normalizedX * maxYaw;
+                // With 180° scene rotation, negate X to flip direction
+                const targetYaw = -normalizedX * maxYaw;
                 const targetPitch = -normalizedY * maxPitch;
 
                 // Smooth interpolation (LERP) for natural movement
@@ -686,9 +685,8 @@ export function InternAvatar({ intern, isRunning, events, onInternSelect, showMo
                 const normalizedX = deltaX / (window.innerWidth / 2);
                 const normalizedY = deltaY / (window.innerHeight / 2);
 
-                // With 180° scene rotation, need to flip X direction
-                // Cursor left (negative X) should make head look left
-                const targetYaw = normalizedX * maxYaw;
+                // With 180° scene rotation, negate X to flip direction
+                const targetYaw = -normalizedX * maxYaw;
                 const targetPitch = -normalizedY * maxPitch;
 
                 // Smooth interpolation (LERP) for natural movement
