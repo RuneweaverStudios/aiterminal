@@ -663,26 +663,24 @@ export function useClaudeCodeComments(
    */
   const activate = useCallback(() => {
     const wasActive = isActiveRef.current;
+    // Set ref immediately so event listeners see it right away (don't wait for re-render)
+    isActiveRef.current = true;
     setIsActive(true);
 
-    // If this is a fresh activation, check if TUI is already visible and greet
+    // If this is a fresh activation, generate greeting immediately
     if (!wasActive) {
-      setTimeout(async () => {
-        const hasTuiPattern = document.body.textContent?.includes('\x1b[?1049h') ||
-                             document.querySelector('.claude-tui-content');
-        if (hasTuiPattern) {
-          const currentCwd = cwdRef.current || '';
-          const greeting = await generateAIGreeting(currentCwd);
-          generateComment({
-            type: 'tui-greeting',
-            message: greeting,
-            timestamp: Date.now(),
-            priority: 'high',
-          });
-        }
-      }, 200);
+      (async () => {
+        const currentCwd = cwdRef.current || '';
+        const greeting = await generateAIGreeting(currentCwd);
+        generateComment({
+          type: 'tui-greeting',
+          message: greeting,
+          timestamp: Date.now(),
+          priority: 'high',
+        });
+      })();
     }
-  }, [isActive, generateComment]);
+  }, [generateComment]);
 
   /**
    * Deactivate the comment system
