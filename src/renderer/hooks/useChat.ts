@@ -193,6 +193,15 @@ export function useChat(): UseChatReturn {
       const trimmed = content.trim()
       if (trimmed.length === 0) return
 
+      // Update system prompt with active intern before sending
+      const api = window.electronAPI
+      if (api?.updateInternSystemPrompt) {
+        const agentState = (window as any).agentLoopState
+        const activeIntern = agentState?.activeIntern || 'mei'
+        console.log('[useChat] Sending message, updating system prompt for intern:', activeIntern)
+        await api.updateInternSystemPrompt(activeIntern)
+      }
+
       // Create user message with current attachments
       const userMsg = createUserMessage(trimmed, attachedFiles)
       setMessages((prev) => [...prev, userMsg].slice(-MAX_MESSAGES))
@@ -252,11 +261,38 @@ export function useChat(): UseChatReturn {
             )
 
             let accumulated = ''
+            let sentenceBuffer = '' // Track incomplete sentences
+
             await api.aiQueryStream(
               { prompt: fullPrompt, taskType: 'general', context },
               (payload) => {
                 if (payload.chunk) {
                   accumulated += payload.chunk
+                  sentenceBuffer += payload.chunk
+
+                  // Check if we have complete sentences (ending with . ! ? or newline)
+                  const sentences = sentenceBuffer.match(/[^.!?]*[.!?]+/g)
+
+                  if (sentences && sentences.length > 0) {
+                    // Send complete sentences to TTS immediately
+                    sentences.forEach((sentence) => {
+                      const trimmed = sentence.trim()
+                      if (trimmed) {
+                        console.log('[useChat] Streaming TTS:', trimmed.substring(0, 50))
+                        const speakEvent = new CustomEvent('ai-response', { detail: trimmed })
+                        window.dispatchEvent(speakEvent)
+                      }
+                    })
+
+                    // Keep the incomplete part in buffer
+                    const lastSentenceEnd = sentenceBuffer.lastIndexOf(sentences[sentences.length - 1])
+                    if (lastSentenceEnd !== -1) {
+                      sentenceBuffer = sentenceBuffer.substring(lastSentenceEnd + sentences[sentences.length - 1].length)
+                    } else {
+                      sentenceBuffer = ''
+                    }
+                  }
+
                   setMessages((prev) =>
                     prev.map((m) =>
                       m.id === placeholderId ? { ...m, content: accumulated } : m,
@@ -288,6 +324,18 @@ export function useChat(): UseChatReturn {
                 m.id === placeholderId ? { ...m, content: finalContent } : m,
               ),
             )
+
+            // Speak any remaining text in the buffer that wasn't sent during streaming
+            try {
+              const remaining = sentenceBuffer.trim()
+              if (remaining && remaining.length > 0) {
+                console.log('[useChat] Speaking remaining text:', remaining.substring(0, 50))
+                const speakEvent = new CustomEvent('ai-response', { detail: remaining })
+                window.dispatchEvent(speakEvent)
+              }
+            } catch (e) {
+              console.error('[useChat] TTS final chunk error:', e)
+            }
           } else {
             const response = await api.aiQuery({
               prompt: fullPrompt,
@@ -301,6 +349,19 @@ export function useChat(): UseChatReturn {
               mid.length > 0 ? (MODELS.get(mid)?.name ?? mid) : ''
             const assistantMsg = createAssistantMessage(content, model)
             setMessages((prev) => [...prev, assistantMsg].slice(-MAX_MESSAGES))
+
+            // Auto-speak the response using TTS
+            try {
+              // Summarize to 1-2 sentences before speaking
+              const sentences = content.split(/[.!?]+/).filter(s => s.trim().length > 0)
+              const summary = sentences.slice(0, 2).join('. ')
+              console.log('[useChat] Dispatching TTS event with summary:', summary.substring(0, 100))
+              const speakEvent = new CustomEvent('ai-response', { detail: summary })
+              window.dispatchEvent(speakEvent)
+              console.log('[useChat] TTS event dispatched')
+            } catch (e) {
+              console.error('[useChat] TTS error:', e)
+            }
           }
         }
       } catch {
@@ -368,6 +429,22 @@ export function useChat(): UseChatReturn {
     },
     [sendMessage, isStreaming, refreshActiveAiModel],
   )
+
+  // Update system prompt when chat opens - always use active intern
+  useEffect(() => {
+    if (isOpen) {
+      const api = window.electronAPI
+      if (api?.updateInternSystemPrompt) {
+        // Get active intern from global agent state, default to mei
+        const agentState = (window as any).agentLoopState
+        const activeIntern = agentState?.activeIntern || 'mei'
+        console.log('[useChat] Chat opened, updating system prompt for intern:', activeIntern)
+        api.updateInternSystemPrompt(activeIntern).catch((err) => {
+          console.error('[useChat] Failed to update system prompt:', err)
+        })
+      }
+    }
+  }, [isOpen])
 
   useEffect(() => {
     void refreshActiveAiModel()

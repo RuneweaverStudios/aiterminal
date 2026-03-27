@@ -38,6 +38,15 @@ const budget: RouterPreset = {
   errorAnalyzer: 'deepseek/deepseek-chat',
 };
 
+const speed: RouterPreset = {
+  name: 'speed',
+  description: 'Fastest responses with streaming — optimized for real-time voice chat.',
+  commandHelper: 'google/gemini-2.0-flash-exp',
+  codeExplainer: 'openai/gpt-4o-2024-11-20',
+  generalAssistant: 'google/gemini-2.0-flash-exp',
+  errorAnalyzer: 'openai/gpt-4o-mini-2024-07-18',
+};
+
 // ---------------------------------------------------------------------------
 // Exported registry
 // ---------------------------------------------------------------------------
@@ -46,9 +55,10 @@ export const PRESETS: ReadonlyMap<string, RouterPreset> = new Map<string, Router
   [balanced.name, balanced],
   [performance.name, performance],
   [budget.name, budget],
+  [speed.name, speed],
 ]);
 
-export const DEFAULT_PRESET = 'balanced';
+export const DEFAULT_PRESET = 'speed';
 
 /**
  * Look up a preset by name.

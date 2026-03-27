@@ -13,6 +13,7 @@ import type { FC } from 'react'
 import type { AIResponse } from '@/ai/types'
 import type { FilePickerResult } from '@/types/file-context'
 import { sanitizeInput, detectPromptInjection } from '@/renderer/utils/sanitizeInput'
+import { useVoiceIO } from '@/renderer/hooks/useVoiceIO'
 
 // Hooks
 import { useTheme } from '@/renderer/hooks/useTheme'
@@ -22,26 +23,27 @@ import { useAutocomplete } from '@/renderer/hooks/useAutocomplete'
 import { useFilePreview } from '@/renderer/hooks/useFilePreview'
 import { useFilePicker } from '@/renderer/hooks/useFilePicker'
 import { useDiffView } from '@/renderer/hooks/useDiffView'
-import { useAgent } from '@/renderer/hooks/useAgent'
 import { useFileTree } from '@/renderer/hooks/useFileTree'
 import { useTerminalTabs } from '@/renderer/hooks/useTerminalTabs'
 import { useTerminalLocation } from '@/renderer/hooks/useTerminalLocation'
+import { useResizablePanels } from '@/renderer/hooks/useResizablePanels'
+import { useBackendSelector } from '@/renderer/hooks/useBackendSelector'
 
 // Components
 import { TerminalView } from '@/renderer/components/TerminalView'
-import { AIResponsePanel } from '@/renderer/components/AIResponsePanel'
+import type { TerminalViewRef } from '@/renderer/components/TerminalView'
 import { CmdKBar } from '@/renderer/components/CmdKBar'
 import { ThemeSelector } from '@/renderer/components/ThemeSelector'
-import { ChatSidebar } from '@/renderer/components/ChatSidebar'
+import { ClaudeCodeChat } from '@/renderer/components/ClaudeCodeChat'
 import { AutocompleteDropdown } from '@/renderer/components/AutocompleteDropdown'
 import { FilePreview } from '@/renderer/components/FilePreview'
 import { FilePicker } from '@/renderer/components/FilePicker'
-import { DiffView } from '@/renderer/components/DiffView'
-import { AgentApprovalPanel } from '@/renderer/components/AgentApprovalPanel'
 import { AgentMode } from '@/renderer/components/AgentMode'
 import { InternAvatar } from '@/renderer/components/InternAvatar'
 import { SplitSidebar } from '@/renderer/components/SplitSidebar'
 import { GatewayVoiceStrip } from '@/renderer/components/GatewayVoiceStrip'
+import { ResizeHandle } from '@/renderer/components/ResizeHandle'
+import { RightSidebarBottom } from '@/renderer/components/RightSidebarBottom'
 import { useAgentLoop } from '@/renderer/hooks/useAgentLoop'
 import { preloadVRMModels } from '@/renderer/vrm-preloader'
 import { AVAILABLE_VRM_MODELS } from '@/renderer/vrm-models'
@@ -75,13 +77,77 @@ export const App: FC = () => {
   const autocomplete = useAutocomplete()
   const filePreview = useFilePreview()
   const diffView = useDiffView()
-  const agent = useAgent()
   const agentLoop = useAgentLoop({ enabled: false })  // Start disabled
   const terminalTabs = useTerminalTabs()
   const terminalLocation = useTerminalLocation()
+  const backendSelector = useBackendSelector()
+  const resizablePanels = useResizablePanels({
+    storageKey: 'aiterminal-layout',
+    defaultSizes: {
+      leftSidebar: 280,
+      terminalArea: 400,
+    },
+    minSizes: {
+      leftSidebar: 200,
+      terminalArea: 200,
+    },
+    maxSizes: {
+      leftSidebar: 600,
+      terminalArea: 800,
+    },
+  })
+
+  // Voice I/O for TTS (Amica-style voice chat)
+  const voice = useVoiceIO(undefined, agentLoop.activeIntern || 'mei')
+
+  // Listen for AI response events to auto-speak
+  useEffect(() => {
+    const handleAIResponse = (event: any) => {
+      console.log('[App] 🎯 AI response EVENT RECEIVED:', event.detail?.substring(0, 50))
+      console.log('[App] Calling voice.speak()...')
+      voice.speak(event.detail).then(() => {
+        console.log('[App] ✅ voice.speak() completed')
+      }).catch((err) => {
+        console.error('[App] ❌ voice.speak() failed:', err)
+      })
+    }
+
+    console.log('[App] Setting up ai-response event listener')
+    window.addEventListener('ai-response', handleAIResponse)
+    return () => {
+      console.log('[App] Cleaning up ai-response event listener')
+      window.removeEventListener('ai-response', handleAIResponse)
+    }
+  }, [voice])
+
+  // Expose active intern globally for chat to access
+  // Initialize immediately (synchronous) so it's available before first render
+  ;(window as any).agentLoopState = {
+    activeIntern: agentLoop.activeIntern || 'mei',
+    enabled: agentLoop.enabled
+  }
+
+  // Update when values change
+  useEffect(() => {
+    (window as any).agentLoopState = {
+      activeIntern: agentLoop.activeIntern || 'mei',
+      enabled: agentLoop.enabled
+    }
+  }, [agentLoop.activeIntern, agentLoop.enabled])
+
+  // Auto-open chat when Claude Code is detected
+  useEffect(() => {
+    if (backendSelector.activeBackend === 'claude-code' && !chat.state.isOpen) {
+      console.log('[App] Claude Code detected, opening chat')
+      chat.open()
+    }
+  }, [backendSelector.activeBackend, chat.state.isOpen])
 
   // NL routing toast
   const [nlToast, setNlToast] = useState<string | null>(null)
+
+  // Terminal visibility when in Claude Code mode
+  const [terminalVisibleInClaudeCode, setTerminalVisibleInClaudeCode] = useState(false)
 
   // TUI Mode: disable natural language interception for CLI tools
   const [tuiMode, setTuiMode] = useState(false)
@@ -127,17 +193,30 @@ export const App: FC = () => {
   const fileTree = useFileTree(activeTabCwd)
   const filePicker = useFilePicker(activeTabCwd)
 
+  // Resizable panels state
+  const { sizes, updateSize } = useResizablePanels({
+    storageKey: 'aiterminal-panel-sizes',
+    defaultSizes: {
+      leftSidebar: 250,
+      rightSidebar: 400,
+    },
+    minSizes: {
+      leftSidebar: 200,
+      rightSidebar: 300,
+    },
+    maxSizes: {
+      leftSidebar: 600,
+      rightSidebar: 800,
+    },
+  })
+
   // -------------------------------------------------------------------------
   // AI response state (existing)
   // -------------------------------------------------------------------------
 
-  const [aiResponse, setAIResponse] = useState<AIResponse | null>(null)
+  const [aiResponse] = useState<AIResponse | null>(null)
   const [isLoading] = useState(false) // Loading state for future AI responses
   const lastCommandRef = useRef<string>('')
-
-  const handleDismiss = useCallback(() => {
-    setAIResponse(null)
-  }, [])
 
   // Toggle TUI mode (disable NL interception)
   const toggleTuiMode = useCallback(() => {
@@ -147,6 +226,116 @@ export const App: FC = () => {
       return next
     })
   }, [])
+
+  // Terminal refs for copy functionality
+  // Use plain refs (not hooks) - stored as mutable objects
+  const terminalRefs = useRef<Record<string, { current: TerminalViewRef | null }>>({})
+
+  // Initialize refs for all terminal tabs
+  useEffect(() => {
+    // Create refs for any tabs that don't have one yet
+    terminalTabs.state.tabs.forEach((tab) => {
+      if (!terminalRefs.current[tab.id]) {
+        terminalRefs.current[tab.id] = { current: null }
+      }
+    })
+  }, [terminalTabs.state.tabs])
+
+  // Copy console output helper
+  const handleCopyConsole = useCallback(() => {
+    // Get active terminal ID
+    const activeTabId = terminalTabs.state.activeTabId
+    if (!activeTabId) return
+
+    // Get terminal ref for active tab
+    const terminalRef = terminalRefs.current[activeTabId]
+    if (!terminalRef || !terminalRef.current || !terminalRef.current.terminal) {
+      // Fallback to toast if terminal not ready
+      const toast = document.createElement('div')
+      toast.textContent = '💡 Terminal not ready - try again in a moment'
+      toast.style.cssText = `
+        position: fixed;
+        bottom: 40px;
+        right: 20px;
+        background: rgba(30, 32, 44, 0.95);
+        backdrop-filter: blur(20px);
+        border: 1px solid rgba(255, 255, 255, 0.2);
+        border-radius: 8px;
+        padding: 12px 16px;
+        color: white;
+        font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+        font-size: 13px;
+        z-index: 10000;
+        animation: fadeInOut 4s ease forwards;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+      `
+      document.body.appendChild(toast)
+      setTimeout(() => toast.remove(), 4000)
+      return
+    }
+
+    // Select all text in terminal
+    terminalRef.current.selectAll()
+
+    // Copy to clipboard using xterm's selection API
+    const terminal = terminalRef.current.terminal
+
+    // Get terminal text content using xterm API
+    let text = ''
+    for (let line = 0; line < terminal.rows; line++) {
+      const lineText = terminal.buffer.active.getLine(line)?.translateToString(true)
+      if (lineText) {
+        text += lineText + '\n'
+      }
+    }
+
+    // Copy to clipboard
+    navigator.clipboard.writeText(text).then(() => {
+      // Show success toast
+      const toast = document.createElement('div')
+      toast.textContent = '✅ Copied all terminal output'
+      toast.style.cssText = `
+        position: fixed;
+        bottom: 40px;
+        right: 20px;
+        background: rgba(40, 167, 69, 0.95);
+        backdrop-filter: blur(20px);
+        border: 1px solid rgba(255, 255, 255, 0.2);
+        border-radius: 8px;
+        padding: 12px 16px;
+        color: white;
+        font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+        font-size: 13px;
+        z-index: 10000;
+        animation: fadeInOut 2s ease forwards;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+      `
+      document.body.appendChild(toast)
+      setTimeout(() => toast.remove(), 2000)
+    }).catch(() => {
+      // Fallback to instructions if copy fails
+      const toast = document.createElement('div')
+      toast.textContent = '💡 Select text in terminal, then press Cmd+C to copy'
+      toast.style.cssText = `
+        position: fixed;
+        bottom: 40px;
+        right: 20px;
+        background: rgba(30, 32, 44, 0.95);
+        backdrop-filter: blur(20px);
+        border: 1px solid rgba(255, 255, 255, 0.2);
+        border-radius: 8px;
+        padding: 12px 16px;
+        color: white;
+        font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+        font-size: 13px;
+        z-index: 10000;
+        animation: fadeInOut 4s ease forwards;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+      `
+      document.body.appendChild(toast)
+      setTimeout(() => toast.remove(), 4000)
+    })
+  }, [terminalTabs.state.activeTabId])
 
   const handleCommand = useCallback((input: string): boolean => {
     const trimmed = input.trim()
@@ -343,6 +532,7 @@ export const App: FC = () => {
   // -------------------------------------------------------------------------
 
   const handleFileTreeSelect = useCallback((path: string) => {
+    // Open file in preview for quick viewing
     filePreview.openFile(path)
   }, [filePreview.openFile])
 
@@ -375,10 +565,6 @@ export const App: FC = () => {
   // -------------------------------------------------------------------------
   // Chat @mention -> file picker connection
   // -------------------------------------------------------------------------
-
-  const handleMentionTrigger = useCallback(() => {
-    filePicker.open('')
-  }, [filePicker.open])
 
   const handleFilePickerSelect = useCallback(async (result: FilePickerResult) => {
     // Insert the file reference into chat input
@@ -425,41 +611,8 @@ export const App: FC = () => {
   // Chat resize handler
   // -------------------------------------------------------------------------
 
-  const handleChatResizeStart = useCallback((e: MouseEvent) => {
-    const startX = e.clientX
-    const startWidth = chat.state.width
-
-    const onMouseMove = (moveEvent: MouseEvent) => {
-      const delta = startX - moveEvent.clientX
-      chat.setWidth(startWidth + delta)
-    }
-
-    const onMouseUp = () => {
-      document.removeEventListener('mousemove', onMouseMove)
-      document.removeEventListener('mouseup', onMouseUp)
-    }
-
-    document.addEventListener('mousemove', onMouseMove)
-    document.addEventListener('mouseup', onMouseUp)
-  }, [chat.state.width, chat.setWidth])
-
-  const handleAvatarResizeStart = useCallback((e: MouseEvent) => {
-    const startY = e.clientY
-    const startHeight = chat.state.avatarHeight || 240
-
-    const onMouseMove = (moveEvent: MouseEvent) => {
-      const delta = moveEvent.clientY - startY
-      chat.setAvatarHeight(startHeight + delta)
-    }
-
-    const onMouseUp = () => {
-      document.removeEventListener('mousemove', onMouseMove)
-      document.removeEventListener('mouseup', onMouseUp)
-    }
-
-    document.addEventListener('mousemove', onMouseMove)
-    document.addEventListener('mouseup', onMouseUp)
-  }, [chat.state.avatarHeight, chat.setAvatarHeight])
+  // Note: Resize handlers removed for simplified ClaudeCodeChat component
+  // Can be re-added later if resizable chat panel is needed
 
   // -------------------------------------------------------------------------
   // Autocomplete position (bottom-left of terminal area)
@@ -480,27 +633,39 @@ export const App: FC = () => {
   // -------------------------------------------------------------------------
 
   useEffect(() => {
-    // Start preloading all VRM models in background on app mount
-    const models = Object.entries(AVAILABLE_VRM_MODELS).map(([id, config]) => ({
-      id,
-      url: config.url
-    }))
+    // Skip VRM preload entirely if there are issues
+    // This prevents crashes from VRM loading errors
+    const preloadTimeout = setTimeout(() => {
+      try {
+        if (typeof document === 'undefined' || !document.body) {
+          console.warn('[App] Document not ready, skipping VRM preload')
+          return
+        }
 
-    console.log('[App] Starting VRM preload for', models.length, 'models')
+        // Only preload if we have models available
+        const modelEntries = Object.entries(AVAILABLE_VRM_MODELS)
+        if (modelEntries.length === 0) {
+          console.log('[App] No VRM models configured, skipping preload')
+          return
+        }
 
-    preloadVRMModels(models, (progress) => {
-      console.log(`[App] VRM preload ${progress.modelId}: ${progress.status} (${progress.progress}%)`)
-    }).then(() => {
-      console.log('[App] VRM preload complete')
-    }).catch(err => {
-      console.error('[App] VRM preload failed:', err)
-    })
+        const models = modelEntries.map(([id, config]) => ({ id, url: config.url }))
+        console.log('[App] Starting VRM preload for', models.length, 'models')
 
-    // Cleanup on unmount
-    return () => {
-      // Keep cached VRMs in memory for the session
-      // Only clear if app is shutting down
-    }
+        preloadVRMModels(models, (progress) => {
+          console.log(`[App] VRM preload ${progress.modelId}: ${progress.status} (${progress.progress}%)`)
+        }).then(() => {
+          console.log('[App] VRM preload complete')
+        }).catch(err => {
+          // Don't crash on VRM load failure - just log it
+          console.warn('[App] VRM preload failed (non-critical):', err)
+        })
+      } catch (error) {
+        console.warn('[App] VRM preload error (non-critical):', error)
+      }
+    }, 2000)
+
+    return () => clearTimeout(preloadTimeout)
   }, [])
 
   // -------------------------------------------------------------------------
@@ -508,8 +673,6 @@ export const App: FC = () => {
   // -------------------------------------------------------------------------
 
   const isAIActive = aiResponse !== null || isLoading
-  const isAgentActive = agent.state.isActive && agent.state.currentPlan !== null
-  const hasBottomPanel = isAIActive || isAgentActive || diffView.state.isOpen
 
   // -------------------------------------------------------------------------
   // Render
@@ -576,116 +739,186 @@ export const App: FC = () => {
       {/*  Main content: file tree | terminal area | chat sidebar           */}
       {/* ═══════════════════════════════════════════════════════════════════ */}
       <div className={`app-main app-main--terminal-${terminalLocation.state.location}`}>
-        {/* ── Split Sidebar (left panel: terminal tabs + file tree) ── */}
+        {/* ── Split Sidebar (left panel: file tree + terminal tabs) ── */}
         {fileTree.isVisible && (
-          <SplitSidebar
-            tabs={terminalTabs.state.tabs}
-            activeTabId={terminalTabs.state.activeTabId}
-            onTabClick={terminalTabs.switchTab}
-            onTabClose={terminalTabs.closeTab}
-            onNewTab={() => terminalTabs.createTab()}
-            fileTreeCwd={activeTabCwd}
-            fileTreeEntries={fileTree.entries}
-            fileTreeVisible={fileTree.isVisible}
-            onFileTreeToggle={fileTree.toggleVisible}
-            onFileTreeSelectFile={handleFileTreeSelect}
-            onFileTreeSelectDirectory={handleFileTreeSelectDirectory}
-            onFileTreeGoToParent={handleFileTreeGoToParent}
-          />
+          <>
+            <div className="split-sidebar-wrapper" style={{ width: sizes.leftSidebar }}>
+              <SplitSidebar
+                tabs={terminalTabs.state.tabs}
+                activeTabId={terminalTabs.state.activeTabId}
+                onTabClick={terminalTabs.switchTab}
+                onTabClose={terminalTabs.closeTab}
+                onNewTab={() => terminalTabs.createTab()}
+                fileTreeCwd={activeTabCwd}
+                fileTreeEntries={fileTree.entries}
+                fileTreeVisible={fileTree.isVisible}
+                onFileTreeToggle={fileTree.toggleVisible}
+                onFileTreeSelectFile={handleFileTreeSelect}
+                onFileTreeSelectDirectory={handleFileTreeSelectDirectory}
+                onFileTreeGoToParent={handleFileTreeGoToParent}
+              />
+            </div>
+            <ResizeHandle
+              direction="horizontal"
+              onDrag={(delta) => resizablePanels.updateSize('leftSidebar', delta)}
+              minSize={200}
+              maxSize={600}
+            />
+          </>
         )}
 
-        {/* ── Terminal area (center) ── */}
+        {/* ── Terminal area (center: terminals + chat panels stacked) ── */}
         <div className="terminal-area">
-          {/* Terminal */}
-          <div className={`terminal-section${hasBottomPanel ? ' terminal-section--with-ai' : ''}`}>
-            <div className="terminal-stack">
-              {terminalTabs.state.tabs.map((tab) => (
-                <div
-                  key={tab.id}
-                  className={
-                    tab.isActive
-                      ? 'terminal-stack__layer'
-                      : 'terminal-stack__layer terminal-stack__layer--inactive'
+          {/* Terminal panel (top) - hide when Claude Code TUI is active unless explicitly shown */}
+          {(backendSelector.activeBackend !== 'claude-code' || terminalVisibleInClaudeCode) && (
+            <div className="terminal-panel" style={{
+              flex: backendSelector.activeBackend === 'claude-code' && terminalVisibleInClaudeCode ? 0 : undefined,
+              height: backendSelector.activeBackend === 'claude-code' && terminalVisibleInClaudeCode
+                ? resizablePanels.sizes.terminalArea * 0.5  // Half height when in Claude Code mode
+                : backendSelector.activeBackend === 'claude-code' ? 0 : resizablePanels.sizes.terminalArea,
+              minHeight: backendSelector.activeBackend === 'claude-code' ? 0 : undefined
+            }}>
+              <div className="terminal-stack">
+                {terminalTabs.state.tabs.map((tab) => {
+                  return (
+                    <div
+                      key={tab.id}
+                      className={
+                        tab.isActive
+                          ? 'terminal-stack__layer'
+                          : 'terminal-stack__layer terminal-stack__layer--inactive'
+                      }
+                    >
+                      <TerminalView
+                        ref={terminalRefs.current[tab.id]}
+                        onCommand={handleCommand}
+                        onPtyOutput={handlePtyOutput}
+                        theme={activeTheme}
+                        sessionId={tab.sessionId}
+                        isActive={tab.isActive}
+                      />
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Resize handle between terminal and chat - show whenever both terminal and chat are visible */}
+          {(backendSelector.activeBackend !== 'claude-code' || terminalVisibleInClaudeCode) && (chat.state.isOpen || backendSelector.activeBackend === 'claude-code') && (
+            <ResizeHandle
+              direction="vertical"
+              onDrag={(delta) => resizablePanels.updateSize('terminalArea', delta)}
+              minSize={100}
+              maxSize={900}
+              className="chat-resize-handle"
+            />
+          )}
+
+          {/* Chat panel - full screen when Claude Code TUI is active, otherwise bottom panel */}
+          {(chat.state.isOpen || backendSelector.activeBackend === 'claude-code') && (
+            <div
+              className="chat-panel"
+              style={{
+                flex: 1,
+                minHeight: 200,
+                overflow: 'hidden'
+              }}
+            >
+              <ClaudeCodeChat
+                messages={chat.state.messages.map(m => ({
+                  role: m.role as 'user' | 'assistant',
+                  content: m.content
+                }))}
+                onSendMessage={async (text) => {
+                  await chat.sendMessage(text)
+                  handleChatSend()
+                }}
+                backend={backendSelector.activeBackend}
+                claudeCodeStream={backendSelector.claudeCodeStream}
+                activeIntern={agentLoop.activeIntern || 'mei'}
+                modelLabel={chat.state.activeModelLabel}
+                presetLabel={chat.state.activePresetLabel}
+                writeToClaudeCode={backendSelector.writeToClaudeCode}
+                clearClaudeCodeStream={backendSelector.clearClaudeCodeStream}
+                onToggleTerminal={() => setTerminalVisibleInClaudeCode(prev => !prev)}
+                terminalVisible={terminalVisibleInClaudeCode}
+                placeholder={backendSelector.activeBackend === 'claude-code' ? 'Type a command to Claude Code...' : 'Type a message or use @ for file context...'}
+                onClose={() => {
+                  chat.close()
+                  // Also kill Claude Code process when closing chat in Claude Code mode
+                  if (backendSelector.activeBackend === 'claude-code') {
+                    backendSelector.killClaudeCode()
+                    setTerminalVisibleInClaudeCode(false)
                   }
-                >
-                  <TerminalView
-                    onCommand={handleCommand}
-                    onPtyOutput={handlePtyOutput}
-                    theme={activeTheme}
-                    sessionId={tab.sessionId}
-                    isActive={tab.isActive}
-                  />
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* Bottom panels: AI Response / Agent / Diff */}
-          {isAIActive && (
-            <div className="ai-section">
-              <AIResponsePanel
-                response={aiResponse}
-                isLoading={isLoading}
-                onDismiss={handleDismiss}
-              />
-            </div>
-          )}
-
-          {isAgentActive && !isAIActive && (
-            <div className="ai-section">
-              <AgentApprovalPanel
-                plan={agent.state.currentPlan}
-                onApproveAll={agent.approveAll}
-                onRejectAll={agent.rejectAll}
-                onApproveOperation={agent.approveOperation}
-                onRejectOperation={agent.rejectOperation}
-                onExecute={agent.execute}
-                onCancel={agent.cancel}
-                isExecuting={agent.state.currentPlan?.status === 'executing'}
-              />
-            </div>
-          )}
-
-          {diffView.state.isOpen && !isAIActive && !isAgentActive && (
-            <div className="ai-section">
-              <DiffView
-                state={diffView.state}
-                onAccept={diffView.accept}
-                onReject={diffView.reject}
-                onSelectFile={diffView.selectFile}
-                onClose={diffView.close}
+                }}
               />
             </div>
           )}
         </div>
 
-        {/* ── Chat Sidebar (right panel) ── */}
-        {chat.state.isOpen && (
-          <div className="chat-panel" style={{ width: `${chat.state.width}px` }}>
-            <ChatSidebar
-              state={chat.state}
-              onSendMessage={handleChatSend}
-              onClose={chat.close}
-              onNewChat={chat.clearMessages}
-              onResizeStart={handleChatResizeStart}
-              onAvatarResizeStart={handleAvatarResizeStart}
-              onInputChange={chat.setInputValue}
-              onRemoveAttachment={chat.removeAttachment}
-              onMentionTrigger={handleMentionTrigger}
-              avatarSection={
-                agentLoop.enabled && (
-                  <InternAvatar
-                    intern={agentLoop.activeIntern || 'mei'}
-                    isRunning={agentLoop.isRunning}
-                    events={agentLoop.events}
-                    showModelSelector={true}
-                    isStreaming={chat.state.isStreaming}
-                    hasInput={chat.state.inputValue.length > 0}
-                  />
-                )
-              }
-            />
+        {/* ── Bottom Panel (toggleable, shows file tree when needed) ── */}
+        {terminalLocation.state.location === 'bottom' && (
+          <div className="terminal-bottom-panel">
+            <div className="terminal-bottom-panel__header">
+              <span>Bottom Panel</span>
+              <button
+                className="terminal-bottom-panel__close"
+                onClick={() => terminalLocation.setLocation('center')}
+                title="Close bottom panel (Cmd+Option+T)"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="terminal-bottom-panel__content">
+              {/* Bottom panel content - can be used for file tree or other features */}
+              <p style={{color: '#565f89', padding: '20px'}}>Bottom panel content</p>
+            </div>
           </div>
+        )}
+
+        {/* ── Right Sidebar (agent + terminal tabs) ── */}
+        {(agentLoop.enabled || chat.state.isOpen) && (
+          <>
+            <ResizeHandle
+              direction="horizontal"
+              onDrag={(delta) => updateSize('rightSidebar', -delta)}
+              minSize={300}
+              maxSize={800}
+            />
+            <div className="right-sidebar" style={{ width: sizes.rightSidebar }}>
+              {/* Top: Agent avatar */}
+              <div className="right-sidebar__agent">
+                <InternAvatar
+                  intern={agentLoop.activeIntern || 'mei'}
+                  isRunning={agentLoop.isRunning}
+                  events={agentLoop.events}
+                  onInternSelect={agentLoop.setActiveIntern}
+                  isStreaming={chat.state.isOpen}  // Streaming when chat is open
+                  hasInput={false}
+                  activeSessionCwd={activeTabCwd}
+                  activeSessionId={terminalTabs.state.activeTabId ?? undefined}
+                />
+              </div>
+
+              {/* Bottom: Tabbed interface */}
+              <RightSidebarBottom
+                terminalSessions={terminalTabs.state.tabs.map(tab => ({
+                  id: tab.id,
+                  name: tab.name,
+                  output: [] // TODO: Capture PTY output for activity view
+                }))}
+                activeAgentsCount={agentLoop.isRunning ? 1 : 0}
+                statisticsData={{
+                  totalCommands: 0, // TODO: Track command statistics
+                  successfulCommands: 0,
+                  failedCommands: 0,
+                  aiQueries: chat.state.messages.length,
+                  uptime: '0:00:00' // TODO: Track session uptime
+                }}
+              />
+            </div>
+          </>
         )}
 
         {/* ── File Preview (overlay, replaces chat area when open) ── */}
@@ -781,6 +1014,15 @@ export const App: FC = () => {
           <kbd className="statusbar__kbd" title="Toggle chat">&#x2318;B</kbd>
           <kbd className="statusbar__kbd" title="Toggle TUI mode">&#x2318;⇧T</kbd>
           <kbd className="statusbar__kbd" title="File picker">&#x2318;P</kbd>
+          <kbd className="statusbar__kbd" title="DevTools with terminal">&#x2318;&#x2325;I</kbd>
+          <button
+            className="statusbar__copy-console"
+            onClick={handleCopyConsole}
+            title="Copy all terminal output (or select text and press Cmd+C)"
+            aria-label="Copy console output"
+          >
+            📋
+          </button>
         </div>
         <div className="statusbar__separator" />
         <div className="statusbar__item">

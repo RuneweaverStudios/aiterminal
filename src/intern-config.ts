@@ -17,38 +17,42 @@ export interface InternConfig {
   specialties: string[];
   color: string;
   emoji: string;
+  elevenLabsVoiceId?: string;
 }
 
 export const INTERNS: Record<string, InternConfig> = {
   mei: {
     id: 'mei',
     name: 'mei',
-    displayName: 'MEI',
+    displayName: 'Mei',
     description: 'Dev & Stripe specialist. Full-stack engineer with CI/CD expertise.',
     personality: 'Analytical, efficient, test-driven',
     specialties: ['React', 'TypeScript', 'Stripe', 'CI/CD', 'Testing'],
     color: '#3b82f6',
-    emoji: '👩‍💻'
+    emoji: '👩‍💻',
+    elevenLabsVoiceId: 'DIcmWR2oXfmLIlrj43rH'
   },
   sora: {
     id: 'sora',
     name: 'sora',
-    displayName: 'SORA',
+    displayName: 'Sora',
     description: 'Research & analysis expert. Data-driven insights and market research.',
     personality: 'Curious, thorough, detail-oriented',
     specialties: ['Research', 'Data Analysis', 'Documentation', 'Architecture'],
     color: '#10b981',
-    emoji: '🔬'
+    emoji: '🔬',
+    elevenLabsVoiceId: 'ngvNHfiCrXLPAHcTrZK1'
   },
   hana: {
     id: 'hana',
     name: 'hana',
-    displayName: 'HANA',
+    displayName: 'Hana',
     description: 'Content & marketing specialist. Compelling copy and multi-platform content.',
     personality: 'Creative, persuasive, energetic',
     specialties: ['Copywriting', 'Social Media', 'Marketing', 'Content Strategy'],
     color: '#f97316',
-    emoji: '✨'
+    emoji: '✨',
+    elevenLabsVoiceId: 'wcs09USXSN5Bl7FXohVZ'
   }
 };
 
