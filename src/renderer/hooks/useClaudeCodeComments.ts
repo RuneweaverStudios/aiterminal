@@ -12,6 +12,50 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { useContextAnalyzer } from './useContextAnalyzer';
 import type { ClaudeCodeMessage } from '../../types';
 
+/**
+ * Generate a context-aware TUI greeting using the AI backend.
+ * Falls back to a simple template if the AI call fails.
+ */
+async function generateAIGreeting(cwd: string): Promise<string> {
+  const folderName = cwd.split('/').filter(Boolean).pop() || 'project';
+
+  // Try AI-generated greeting via OpenRouter
+  try {
+    const api = typeof window !== 'undefined' ? window.electronAPI : undefined;
+    if (api?.aiQueryStream) {
+      let result = '';
+      await new Promise<void>((resolve, reject) => {
+        api.aiQueryStream(
+          {
+            prompt: `You are a friendly AI assistant avatar greeting Claude Code as it starts a session. The user is working in: ${cwd}
+The project folder is "${folderName}".
+Write a single short greeting sentence (under 20 words) that:
+- Greets Claude naturally
+- References the specific project/folder name
+- Shows awareness of what kind of project it might be based on the name
+- Sounds warm and enthusiastic but not over the top
+Only output the greeting, nothing else.`,
+            taskType: 'general',
+          },
+          (payload) => {
+            if (payload.chunk) result += payload.chunk;
+            if (payload.error) reject(new Error(payload.error));
+          },
+        ).then(() => resolve()).catch(reject);
+      });
+      const trimmed = result.trim().replace(/^["']|["']$/g, '');
+      if (trimmed.length > 10 && trimmed.length < 200) {
+        return trimmed;
+      }
+    }
+  } catch (err) {
+    console.warn('[useClaudeCodeComments] AI greeting failed, using fallback:', err);
+  }
+
+  // Fallback: template-based greeting
+  return `Hey Claude! Looks like we're working on ${folderName}. Let's get it done.`;
+}
+
 interface CommentEvent {
   type: string;
   message: string;
@@ -30,6 +74,8 @@ interface UseClaudeCodeCommentsOptions {
   minCommentInterval?: number;
   /** Callback for when a comment is generated */
   onComment?: (comment: string) => void;
+  /** Current working directory of the active terminal tab */
+  cwd?: string;
 }
 
 interface UseClaudeCodeCommentsReturn {
@@ -43,6 +89,8 @@ interface UseClaudeCodeCommentsReturn {
   recentComments: CommentEvent[];
   /** Clear comment history */
   clearHistory: () => void;
+  /** Feed live PTY stream text for real-time analysis */
+  feedStream: (text: string) => void;
 }
 
 /**
@@ -443,7 +491,11 @@ export function useClaudeCodeComments(
   const {
     minCommentInterval = 15000, // 15 seconds default
     onComment,
+    cwd,
   } = options;
+
+  const cwdRef = useRef(cwd);
+  cwdRef.current = cwd;
 
   const { analyzeLog } = useContextAnalyzer();
 
@@ -471,9 +523,15 @@ export function useClaudeCodeComments(
     comment: CommentEvent
   ) => {
     const now = Date.now();
+    const elapsed = now - lastCommentTime.current;
 
-    // Rate limiting check
-    if (now - lastCommentTime.current < minCommentInterval) {
+    // High-priority events (errors, greetings) get a shorter cooldown (30s)
+    // Normal events respect the full interval (3 min)
+    const effectiveInterval = comment.priority === 'high'
+      ? Math.min(minCommentInterval, 30000)
+      : minCommentInterval;
+
+    if (elapsed < effectiveInterval) {
       console.log('[useClaudeCodeComments] Comment throttled (too soon)');
       return;
     }
@@ -579,67 +637,52 @@ export function useClaudeCodeComments(
   }, [isActive]);
 
   /**
-   * Listen for Claude Code TUI entry and greet
-   * IMPORTANT: This listener is set up once on mount (empty deps array)
-   * to catch the event even if it fires before the hook is activated.
-   * Uses isActiveRef to check current state without closure issues.
+   * Listen for Claude Code TUI entry and greet with AI-generated message
+   * Uses isActiveRef and cwdRef to avoid stale closures.
    */
   useEffect(() => {
-    console.log('[useClaudeCodeComments] Setting up TUI event listener');
-    const handleTuiEntered = () => {
-      console.log('[useClaudeCodeComments] 🎉 claude-code-tui-entered event received!');
-      console.log('[useClaudeCodeComments] isActiveRef.current:', isActiveRef.current);
-      console.log('[useClaudeCodeComments] isActive state:', isActive);
-      // Only greet if the comment system is active
-      if (!isActiveRef.current) {
-        console.log('[useClaudeCodeComments] ⚠️ Skipping greeting - not active yet');
-        return;
-      }
-      console.log('[useClaudeCodeComments] ✅ Generating greeting comment');
-      // Generate a greeting comment
+    const handleTuiEntered = async () => {
+      if (!isActiveRef.current) return;
+
+      const currentCwd = cwdRef.current || '';
+      const greeting = await generateAIGreeting(currentCwd);
       generateComment({
         type: 'tui-greeting',
-        message: 'Hey Claude! Ready to code?',
+        message: greeting,
         timestamp: Date.now(),
         priority: 'high',
       });
     };
 
     window.addEventListener('claude-code-tui-entered', handleTuiEntered);
-
-    return () => {
-      console.log('[useClaudeCodeComments] Cleaning up TUI event listener');
-      window.removeEventListener('claude-code-tui-entered', handleTuiEntered);
-    };
-  }, [generateComment]); // Only depend on generateComment, not isActive
+    return () => window.removeEventListener('claude-code-tui-entered', handleTuiEntered);
+  }, [generateComment]);
 
   /**
    * Activate the comment system
    */
   const activate = useCallback(() => {
-    console.log('[useClaudeCodeComments] Activating');
     const wasActive = isActiveRef.current;
     setIsActive(true);
 
-    // If this is a fresh activation (not already active), check if we should greet
+    // If this is a fresh activation, check if TUI is already visible and greet
     if (!wasActive) {
-      // Small delay to ensure activation has propagated
-      setTimeout(() => {
-        // Check if Claude Code backend is active by looking for the TUI in DOM
-        const hasTuiPattern = document.body.textContent.includes('\x1b[?1049h') ||
+      setTimeout(async () => {
+        const hasTuiPattern = document.body.textContent?.includes('\x1b[?1049h') ||
                              document.querySelector('.claude-tui-content');
         if (hasTuiPattern) {
-          console.log('[useClaudeCodeComments] TUI detected on activation, greeting!');
+          const currentCwd = cwdRef.current || '';
+          const greeting = await generateAIGreeting(currentCwd);
           generateComment({
             type: 'tui-greeting',
-            message: 'Hey Claude! Ready to code?',
+            message: greeting,
             timestamp: Date.now(),
             priority: 'high',
           });
         }
       }, 200);
     }
-  }, [isActive]);
+  }, [isActive, generateComment]);
 
   /**
    * Deactivate the comment system
@@ -660,11 +703,129 @@ export function useClaudeCodeComments(
     lastAchievementCount.current = 0;
   }, []);
 
+  /**
+   * Feed live PTY stream text for real-time pattern detection.
+   * This analyzes raw TUI output to catch task completions, agent
+   * activity, errors, and other events that the JSONL watcher may miss.
+   */
+  const streamBufferRef = useRef('');
+  const lastStreamAnalysisRef = useRef(0);
+
+  const feedStream = useCallback((text: string) => {
+    if (!isActiveRef.current) return;
+
+    // Accumulate stream text (keep last 4KB for pattern matching)
+    streamBufferRef.current = (streamBufferRef.current + text).slice(-4096);
+    const buf = streamBufferRef.current;
+
+    // Throttle analysis to avoid excessive processing
+    const now = Date.now();
+    if (now - lastStreamAnalysisRef.current < 5000) return;
+    lastStreamAnalysisRef.current = now;
+
+    // Strip ANSI codes for pattern matching
+    const clean = buf
+      .replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '')
+      .replace(/\x1b\][^\x07]*\x07/g, '')
+      .replace(/\x07/g, '');
+
+    // --- Task / agent completion ---
+    if (/task completed|✓ completed|done!|finished successfully/i.test(clean)) {
+      // Extract what was completed from the last few lines
+      const lines = clean.split('\n').filter(l => l.trim());
+      const lastLines = lines.slice(-5).join(' ');
+      const taskMatch = lastLines.match(/(?:completed|finished|done)[:\s]*(.{10,60})/i);
+      const detail = taskMatch?.[1]?.trim() || '';
+      generateComment({
+        type: 'task-complete',
+        message: detail
+          ? `Nice, that's done. ${detail.charAt(0).toUpperCase() + detail.slice(1)}.`
+          : `Task finished. Looking good so far.`,
+        timestamp: now,
+        priority: 'medium',
+      });
+      streamBufferRef.current = '';
+      return;
+    }
+
+    // --- Agent spawned / finished ---
+    if (/agent.*(?:started|spawned|launched)/i.test(clean)) {
+      generateComment({
+        type: 'agent-spawned',
+        message: `Subagent spinning up. Let's see what it finds.`,
+        timestamp: now,
+        priority: 'low',
+      });
+      streamBufferRef.current = '';
+      return;
+    }
+    if (/agent.*(?:completed|finished|done|returned)/i.test(clean)) {
+      generateComment({
+        type: 'agent-done',
+        message: `Agent finished its work. Integrating the results.`,
+        timestamp: now,
+        priority: 'medium',
+      });
+      streamBufferRef.current = '';
+      return;
+    }
+
+    // --- Build / test results ---
+    if (/build (?:succeeded|successful|complete)/i.test(clean)) {
+      generateComment({
+        type: 'build-success',
+        message: `Build passed. Ship it when you're ready.`,
+        timestamp: now,
+        priority: 'medium',
+      });
+      streamBufferRef.current = '';
+      return;
+    }
+    if (/(?:all )?tests? pass(?:ed|ing)/i.test(clean) && !/fail/i.test(clean)) {
+      generateComment({
+        type: 'tests-pass',
+        message: `Tests are green. Solid work.`,
+        timestamp: now,
+        priority: 'medium',
+      });
+      streamBufferRef.current = '';
+      return;
+    }
+
+    // --- Errors in stream ---
+    if (/error[:\s]|failed|fatal|panic|traceback/i.test(clean)) {
+      const errorLines = clean.split('\n').filter(l => /error|failed|fatal/i.test(l));
+      const firstError = errorLines[0]?.trim().slice(0, 80) || 'something went wrong';
+      generateComment({
+        type: 'stream-error',
+        message: `Heads up — ${firstError}. Want me to take a look?`,
+        timestamp: now,
+        priority: 'high',
+        context: { error: firstError },
+      });
+      streamBufferRef.current = '';
+      return;
+    }
+
+    // --- Long-running operation (lots of output, no clear resolution) ---
+    if (buf.length > 3500 && !/error|fail|success|pass|complete|done/i.test(clean)) {
+      generateComment({
+        type: 'long-running',
+        message: `Still working on it. Hang tight.`,
+        timestamp: now,
+        priority: 'low',
+      });
+      streamBufferRef.current = '';
+      return;
+    }
+  }, [generateComment]);
+
   return {
     isActive,
     activate,
     deactivate,
     recentComments,
     clearHistory,
+    feedStream,
   };
 }

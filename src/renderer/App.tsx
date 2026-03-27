@@ -106,18 +106,6 @@ export const App: FC = () => {
   const voice = useVoiceIO(undefined, agentLoop.activeIntern || 'sora')
 
   // Claude Code comments - contextual voice feedback during Claude Code sessions
-  const claudeCodeComments = useClaudeCodeComments({
-    minCommentInterval: 15000, // 15 seconds between comments
-    onComment: (comment) => {
-      // Speak the comment via TTS
-      voice.speak(comment).catch((err) => {
-        console.error('[App] Failed to speak Claude Code comment:', err)
-      })
-      // Also add as speech bubble
-      speechBubbles.addBubble(comment)
-    },
-  })
-
   // Speech bubbles for VRM avatar
   const speechBubbles = useSpeechBubbles()
 
@@ -163,17 +151,6 @@ export const App: FC = () => {
       chat.open()
     }
   }, [backendSelector.activeBackend, chat.state.isOpen])
-
-  // Activate/deactivate Claude Code comments based on backend
-  useEffect(() => {
-    if (backendSelector.activeBackend === 'claude-code') {
-      console.log('[App] Claude Code backend active, enabling comments')
-      claudeCodeComments.activate()
-    } else {
-      console.log('[App] Claude Code backend inactive, disabling comments')
-      claudeCodeComments.deactivate()
-    }
-  }, [backendSelector.activeBackend, claudeCodeComments])
 
   // NL routing toast
   const [nlToast, setNlToast] = useState<string | null>(null)
@@ -228,6 +205,36 @@ export const App: FC = () => {
       cancelled = true
     }
   }, [terminalTabs.state.activeTabId, terminalTabs])
+
+  // Claude Code comments - contextual voice feedback during Claude Code sessions
+  const claudeCodeComments = useClaudeCodeComments({
+    minCommentInterval: 180000, // 3 minutes between comments
+    cwd: activeTabCwd,
+    onComment: (comment) => {
+      // Speak the comment via TTS
+      voice.speak(comment).catch((err) => {
+        console.error('[App] Failed to speak Claude Code comment:', err)
+      })
+      // Also add as speech bubble
+      speechBubbles.addBubble(comment)
+    },
+  })
+
+  // Activate/deactivate Claude Code comments based on backend
+  useEffect(() => {
+    if (backendSelector.activeBackend === 'claude-code') {
+      claudeCodeComments.activate()
+    } else {
+      claudeCodeComments.deactivate()
+    }
+  }, [backendSelector.activeBackend, claudeCodeComments])
+
+  // Feed live Claude Code PTY stream into the comment analyzer
+  useEffect(() => {
+    if (backendSelector.activeBackend === 'claude-code' && backendSelector.claudeCodeStream) {
+      claudeCodeComments.feedStream(backendSelector.claudeCodeStream)
+    }
+  }, [backendSelector.claudeCodeStream, backendSelector.activeBackend, claudeCodeComments])
 
   const fileTree = useFileTree(activeTabCwd)
   const filePicker = useFilePicker(activeTabCwd)
@@ -863,8 +870,6 @@ export const App: FC = () => {
             <ResizeHandle
               direction="horizontal"
               onDrag={(delta) => resizablePanels.updateSize('leftSidebar', delta)}
-              minSize={200}
-              maxSize={600}
             />
           </>
         )}
@@ -910,8 +915,6 @@ export const App: FC = () => {
             <ResizeHandle
               direction="vertical"
               onDrag={(delta) => resizablePanels.updateSize('terminalArea', delta)}
-              minSize={100}
-              maxSize={900}
               className="chat-resize-handle"
             />
           )}
@@ -985,8 +988,6 @@ export const App: FC = () => {
             <ResizeHandle
               direction="horizontal"
               onDrag={(delta) => resizablePanels.updateSize('rightSidebar', -delta)}
-              minSize={300}
-              maxSize={800}
             />
             <div className="right-sidebar" style={{ width: resizablePanels.sizes.rightSidebar }}>
               {/* VRM Avatar - full height */}
