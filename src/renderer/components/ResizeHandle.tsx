@@ -5,8 +5,6 @@ interface ResizeHandleProps {
   onDrag: (delta: number) => void;
   onDragStart?: () => void;
   onDragEnd?: () => void;
-  minSize?: number;
-  maxSize?: number;
   className?: string;
 }
 
@@ -15,94 +13,82 @@ export const ResizeHandle: React.FC<ResizeHandleProps> = ({
   onDrag,
   onDragStart,
   onDragEnd,
-  minSize = 50,
-  maxSize = 10000,
   className = '',
 }) => {
   const [isDragging, setIsDragging] = useState(false);
-  const startPosRef = useRef<{ x: number; y: number } | null>(null);
+  const draggingRef = useRef(false);
+  const lastPosRef = useRef<{ x: number; y: number } | null>(null);
+  const onDragRef = useRef(onDrag);
+  const onDragEndRef = useRef(onDragEnd);
+  const directionRef = useRef(direction);
+  onDragRef.current = onDrag;
+  onDragEndRef.current = onDragEnd;
+  directionRef.current = direction;
 
-  const handleMouseDown = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    startPosRef.current = { x: e.clientX, y: e.clientY };
-    setIsDragging(true);
-    onDragStart?.();
-
-    // Add global event listeners
-    document.addEventListener('mousemove', handleMouseMove);
-    document.addEventListener('mouseup', handleMouseUp);
-    document.body.style.userSelect = 'none';
-  }, [onDragStart]);
-
+  // Stable mouse handlers that read from refs (no stale closures)
   const handleMouseMove = useCallback((e: MouseEvent) => {
-    if (!isDragging || !startPosRef.current) return;
-
-    const deltaX = e.clientX - startPosRef.current.x;
-    const deltaY = e.clientY - startPosRef.current.y;
-
-    // Calculate delta based on direction
-    const delta = direction === 'horizontal' ? deltaX : deltaY;
-
-    // Clamp delta based on min/max constraints
-    const clampedDelta = Math.max(
-      Math.min(delta, maxSize - minSize),
-      -(maxSize - minSize)
-    );
-
-    onDrag(clampedDelta);
-  }, [isDragging, direction, onDrag, minSize, maxSize]);
+    if (!draggingRef.current || !lastPosRef.current) return;
+    const delta = directionRef.current === 'horizontal'
+      ? e.clientX - lastPosRef.current.x
+      : e.clientY - lastPosRef.current.y;
+    lastPosRef.current = { x: e.clientX, y: e.clientY };
+    onDragRef.current(delta);
+  }, []);
 
   const handleMouseUp = useCallback(() => {
+    draggingRef.current = false;
+    lastPosRef.current = null;
     setIsDragging(false);
-    startPosRef.current = null;
-    onDragEnd?.();
-
-    // Remove global event listeners
+    onDragEndRef.current?.();
     document.removeEventListener('mousemove', handleMouseMove);
     document.removeEventListener('mouseup', handleMouseUp);
     document.body.style.userSelect = '';
-  }, [onDragEnd, handleMouseMove]);
-
-  // Touch support for mobile
-  const handleTouchStart = useCallback((e: React.TouchEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    const touch = e.touches[0];
-    startPosRef.current = { x: touch.clientX, y: touch.clientY };
-    setIsDragging(true);
-    onDragStart?.();
-
-    document.addEventListener('touchmove', handleTouchMove, { passive: false });
-    document.addEventListener('touchend', handleTouchEnd);
-    document.body.style.userSelect = 'none';
-  }, [onDragStart]);
+  }, [handleMouseMove]);
 
   const handleTouchMove = useCallback((e: TouchEvent) => {
-    if (!isDragging || !startPosRef.current) return;
-
+    if (!draggingRef.current || !lastPosRef.current) return;
     const touch = e.touches[0];
-    const deltaX = touch.clientX - startPosRef.current.x;
-    const deltaY = touch.clientY - startPosRef.current.y;
-
-    const delta = direction === 'horizontal' ? deltaX : deltaY;
-    const clampedDelta = Math.max(
-      Math.min(delta, maxSize - minSize),
-      -(maxSize - minSize)
-    );
-
-    onDrag(clampedDelta);
-  }, [isDragging, direction, onDrag, minSize, maxSize]);
+    const delta = directionRef.current === 'horizontal'
+      ? touch.clientX - lastPosRef.current.x
+      : touch.clientY - lastPosRef.current.y;
+    lastPosRef.current = { x: touch.clientX, y: touch.clientY };
+    onDragRef.current(delta);
+  }, []);
 
   const handleTouchEnd = useCallback(() => {
+    draggingRef.current = false;
+    lastPosRef.current = null;
     setIsDragging(false);
-    startPosRef.current = null;
-    onDragEnd?.();
-
+    onDragEndRef.current?.();
     document.removeEventListener('touchmove', handleTouchMove);
     document.removeEventListener('touchend', handleTouchEnd);
     document.body.style.userSelect = '';
-  }, [onDragEnd, handleTouchMove]);
+  }, [handleTouchMove]);
 
-  // Cleanup event listeners on unmount
+  const handleMouseDown = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    draggingRef.current = true;
+    lastPosRef.current = { x: e.clientX, y: e.clientY };
+    setIsDragging(true);
+    onDragStart?.();
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
+    document.body.style.userSelect = 'none';
+  }, [onDragStart, handleMouseMove, handleMouseUp]);
+
+  const handleTouchStart = useCallback((e: React.TouchEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    const touch = e.touches[0];
+    draggingRef.current = true;
+    lastPosRef.current = { x: touch.clientX, y: touch.clientY };
+    setIsDragging(true);
+    onDragStart?.();
+    document.addEventListener('touchmove', handleTouchMove, { passive: false });
+    document.addEventListener('touchend', handleTouchEnd);
+    document.body.style.userSelect = 'none';
+  }, [onDragStart, handleTouchMove, handleTouchEnd]);
+
+  // Cleanup on unmount
   useEffect(() => {
     return () => {
       document.removeEventListener('mousemove', handleMouseMove);
@@ -124,14 +110,9 @@ export const ResizeHandle: React.FC<ResizeHandleProps> = ({
         position: 'relative',
         zIndex: 100,
         cursor: isHorizontal ? 'col-resize' : 'row-resize',
-        // Larger hit area for easier grabbing (increased from 12px to 16px)
         width: isHorizontal ? '16px' : '100%',
         height: isHorizontal ? '100%' : '16px',
-        // Don't grow or shrink in flex layout
         flex: '0 0 auto',
-        // Visual indicator (thin line)
-        backgroundColor: isDragging ? 'rgba(189, 147, 249, 0.5)' : 'transparent',
-        // Center the visual indicator
         background: isDragging
           ? 'rgba(189, 147, 249, 0.5)'
           : isHorizontal

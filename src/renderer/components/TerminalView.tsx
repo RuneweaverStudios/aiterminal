@@ -63,6 +63,7 @@ export const TerminalView = forwardRef<TerminalViewRef, TerminalViewProps>((prop
       lineHeight: 1.4,
       cursorBlink: true,
       cursorStyle: 'bar',
+      scrollback: 10000,
       allowProposedApi: true,
       allowTransparency: true,
     })

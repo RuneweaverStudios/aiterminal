@@ -133,7 +133,7 @@
   flex: 1;
   display: flex;
   flex-direction: column;
-  overflow: visible; /* Allow resize handles to be clickable */
+  overflow: hidden;
   min-width: 0;
   background: transparent;
   position: relative;
@@ -141,6 +141,7 @@
 
 /* Terminal panel (top section) */
 .terminal-panel {
+  position: relative;
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -158,10 +159,12 @@
   margin: 0;
 }
 
-/* Chat panel (bottom section) */
-.chat-panel {
+/* Chat panel (bottom section inside terminal-area) */
+.terminal-area > .chat-panel {
   display: flex;
   flex-direction: column;
+  flex: 1;
+  min-height: 0;
   overflow: hidden;
   background: rgba(30, 32, 44, 0.98);
   backdrop-filter: blur(30px);
@@ -205,6 +208,7 @@
 
 .claude-code-chat {
   height: 100%;
+  min-height: 0;
   display: flex;
   flex-direction: column;
 }
@@ -326,6 +330,7 @@
 /* ClaudeCodeChat container styles */
 .claude-code-chat {
   flex: 1;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   font-family: 'SF Mono', 'Monaco', 'Inconsolata', 'Fira Code', monospace;
@@ -584,9 +589,9 @@
   min-height: 0;
 }
 
-/* ===== Chat Panel (right panel) ===== */
+/* ===== Chat Panel (right sidebar variant) ===== */
 
-.chat-panel {
+.right-sidebar .chat-panel {
   flex-shrink: 0;
   overflow: hidden;
   border-left: 1px solid var(--glass-border);
@@ -597,8 +602,8 @@
   display: flex;
   flex-direction: column;
   position: relative;
-  z-index: 150; /* Above resize handles and overlays */
-  pointer-events: auto; /* Ensure input works */
+  z-index: 150;
+  pointer-events: auto;
 }
 
 .chat-sidebar--with-avatar {
@@ -785,7 +790,7 @@
   height: 100%;
   background-color: transparent;
   padding: 4px 0 0 8px;
-  overflow: auto;
+  overflow: hidden;
 }
 
 /* ===== AI Section ===== */
