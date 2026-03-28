@@ -47,6 +47,7 @@ import { SpeechBubbles, useSpeechBubbles } from '@/renderer/components/SpeechBub
 import { VirtualAssistantChat } from '@/renderer/components/VirtualAssistantChat'
 import { useAgentLoop } from '@/renderer/hooks/useAgentLoop'
 import { useClaudeCodeComments } from '@/renderer/hooks/useClaudeCodeComments'
+import { useElevenLabsAgent } from '@/renderer/hooks/useElevenLabsAgent'
 import { preloadVRMModels } from '@/renderer/vrm-preloader'
 import { AVAILABLE_VRM_MODELS } from '@/renderer/vrm-models'
 
@@ -161,9 +162,9 @@ export const App: FC = () => {
   // 3D model chat visibility - hidden by default to show avatar more clearly
   const [showVrmChat, setShowVrmChat] = useState(false)
 
-  // RP Mode: fullscreen VRM with minimax model for conversation
+  // RP Mode: fullscreen VRM with ElevenLabs conversational agent
   const [rpMode, setRpMode] = useState(false)
-  const RP_MODEL = 'minimax/minimax-m2-her'
+  const elevenAgent = useElevenLabsAgent()
 
   // TUI Mode: disable natural language interception for CLI tools
   const [tuiMode, setTuiMode] = useState(false)
@@ -1034,13 +1035,22 @@ export const App: FC = () => {
                   showVrmChat={showVrmChat || rpMode}
                   onToggleVrmChat={rpMode ? undefined : () => setShowVrmChat(prev => !prev)}
                   rpMode={rpMode}
-                  onToggleRpMode={() => {
-                    setRpMode(prev => {
-                      if (!prev) setShowVrmChat(true) // auto-show chat when entering RP
-                      return !prev
-                    })
+                  onToggleRpMode={async () => {
+                    if (!rpMode) {
+                      // Entering RP mode — start ElevenLabs agent
+                      setShowVrmChat(true)
+                      setRpMode(true)
+                      await elevenAgent.start()
+                    } else {
+                      // Exiting RP mode — stop agent
+                      setRpMode(false)
+                      await elevenAgent.stop()
+                    }
                   }}
-                  activeModel={rpMode ? 'minimax-m2-her' : (chat.state.activeModelLabel || undefined)}
+                  activeModel={rpMode
+                    ? `ElevenLabs Agent ${elevenAgent.status === 'connected' ? '(live)' : `(${elevenAgent.status})`}`
+                    : (chat.state.activeModelLabel || undefined)
+                  }
                 />
 
                 {/* Speech Bubbles - floating overlay */}
@@ -1052,12 +1062,23 @@ export const App: FC = () => {
                 {/* Virtual Assistant Chat - transparent overlay inside avatar container */}
                 {(showVrmChat || rpMode) && (
                   <VirtualAssistantChat
-                    messages={[...chat.state.messages]}
-                    onSendMessage={async (msg) => {
-                      await chat.sendMessage(msg, rpMode ? RP_MODEL : undefined)
-                      speechBubbles.addBubble(msg)
-                    }}
-                    isStreaming={chat.state.isStreaming}
+                    messages={rpMode
+                      ? elevenAgent.messages.map((m, i) => ({
+                          id: `agent-${i}`,
+                          role: m.role === 'agent' ? 'assistant' as const : 'user' as const,
+                          content: m.text,
+                          timestamp: m.timestamp,
+                        }))
+                      : [...chat.state.messages]
+                    }
+                    onSendMessage={rpMode
+                      ? (msg) => elevenAgent.sendText(msg)
+                      : async (msg) => {
+                          await chat.sendMessage(msg)
+                          speechBubbles.addBubble(msg)
+                        }
+                    }
+                    isStreaming={rpMode ? elevenAgent.isSpeaking : chat.state.isStreaming}
                   />
                 )}
               </div>
