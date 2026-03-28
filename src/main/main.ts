@@ -100,16 +100,26 @@ console.log('[main] AI Client:', aiClient ? 'Initialized' : 'Stubbed');
 // ---------------------------------------------------------------------------
 
 function createWindow(): BrowserWindow {
+  const isMac = process.platform === 'darwin';
+
   const window = new BrowserWindow({
     width: 1200,
     height: 800,
     minWidth: 600,
     minHeight: 400,
-    titleBarStyle: 'hiddenInset',
-    transparent: true,
-    vibrancy: 'under-window',
-    visualEffectState: 'active',
-    backgroundColor: '#00000000',
+    // macOS: hidden inset title bar with vibrancy glass effect
+    // Windows/Linux: default title bar with solid background
+    ...(isMac
+      ? {
+          titleBarStyle: 'hiddenInset',
+          transparent: true,
+          vibrancy: 'under-window',
+          visualEffectState: 'active',
+          backgroundColor: '#00000000',
+        }
+      : {
+          backgroundColor: '#1e2028',
+        }),
     webPreferences: {
       preload: join(__dirname, 'preload.js'),
       contextIsolation: true,

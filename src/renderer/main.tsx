@@ -31,6 +31,12 @@ import "./styles/virtual-assistant-chat.css";
 import "./components/RightSidebarBottom.css";
 import "./components/TerminalActivityView.css";
 
+// Set platform class on <html> for CSS platform-specific fallbacks
+const platform = (window as any).platform as string | undefined;
+if (platform && platform !== 'darwin') {
+  document.documentElement.classList.add('no-vibrancy');
+}
+
 const rootElement = document.getElementById("root");
 
 if (!rootElement) {

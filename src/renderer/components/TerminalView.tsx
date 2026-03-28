@@ -130,7 +130,9 @@ export const TerminalView = forwardRef<TerminalViewRef, TerminalViewProps>((prop
         }
       } else {
         // Regular character — add to input buffer
-        inputBufferRef.current += data
+        // Strip bracketed paste markers (\x1b[200~ and \x1b[201~)
+        const cleaned = data.replace(/\x1b\[200~/g, '').replace(/\x1b\[201~/g, '')
+        inputBufferRef.current += cleaned
       }
 
       // Send to PTY (unless skipped for NL handling)

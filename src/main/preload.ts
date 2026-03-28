@@ -415,3 +415,4 @@ console.log('[preload] Exposing env vars:', {
 
 contextBridge.exposeInMainWorld('electronAPI', electronAPI);
 contextBridge.exposeInMainWorld('env', exposedEnvVars);
+contextBridge.exposeInMainWorld('platform', process.platform);

@@ -35,7 +35,7 @@ export function sanitizeInput(
   // Strip ANSI escape codes if requested
   if (stripAnsiCodes) {
     sanitized = sanitized.replace(
-      /\x1b\[[0-9;]*[mGKH]/g,
+      /\x1b\[[0-9;]*[a-zA-Z~]/g,
       '',
     )
   }
