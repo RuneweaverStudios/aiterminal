@@ -102,6 +102,7 @@ export function InternAvatar({
   const cursorPositionRef = useRef({ x: window.innerWidth / 2, y: window.innerHeight / 2 });
   const [currentExpression, setCurrentExpression] = useState<VRMExpression>('neutral');
   const [modelLoaded, setModelLoaded] = useState(false);
+  const modelLoadedRef = useRef(false);
   const [modelError, setModelError] = useState<string | null>(null);
   const [showTooltip, setShowTooltip] = useState(false);
   const [displayedCwd, setDisplayedCwd] = useState<string | undefined>(activeSessionCwd);
@@ -118,6 +119,7 @@ export function InternAvatar({
   useEffect(() => {
     console.log(`[InternAvatar] Intern changed to ${effectiveIntern}, resetting VRM init flag`);
     vrmInitializedRef.current = false;
+    modelLoadedRef.current = false;
     setModelLoaded(false);
     setModelError(null);
   }, [effectiveIntern]);
@@ -333,6 +335,7 @@ export function InternAvatar({
         };
 
         vrmInitializedRef.current = true;
+        modelLoadedRef.current = true;
         setModelLoaded(true);
         console.log(`%c✅ ${effectiveIntern.toUpperCase()} VRM loaded instantly!`, 'color:#ff66aa;font-weight:bold');
 
@@ -671,7 +674,7 @@ export function InternAvatar({
 
       // Timeout: fail fast if VRM doesn't load (likely invalid VRM)
       const timeoutId = setTimeout(() => {
-        if (!modelLoaded) {
+        if (!modelLoadedRef.current) {
           console.warn(`[InternAvatar] VRM load timeout/failure for ${effectiveIntern}`);
           setModelError('VRM model could not be loaded. This is usually because the model is missing proper VRM humanoid bone mappings.');
         }
@@ -780,6 +783,7 @@ export function InternAvatar({
         };
 
         vrmInitializedRef.current = true;
+        modelLoadedRef.current = true;
         setModelLoaded(true);
         console.log(`%c✅ ${effectiveIntern.toUpperCase()} VRM loaded!`, 'color:#ff66aa;font-weight:bold');
 
@@ -1061,6 +1065,16 @@ export function InternAvatar({
     return () => clearTimeout(timer);
   }, [effectiveIntern, currentModel]);
 
+  // Trigger Three.js resize when RP mode toggles (canvas was sized for different layout)
+  useEffect(() => {
+    if (!vrmRef.current) return;
+    // Fire multiple resize events as CSS layout settles
+    const timers = [50, 150, 300].map(delay =>
+      setTimeout(() => window.dispatchEvent(new Event('resize')), delay)
+    );
+    return () => timers.forEach(clearTimeout);
+  }, [rpMode]);
+
   // Update expression based on latest event
   useEffect(() => {
     if (!vrmRef.current || events.length === 0) return;
@@ -1220,11 +1234,12 @@ export function InternAvatar({
 
   return (
     <div className="intern-avatar">
-      {/* Header with model info and agent selector */}
+      {/* Header with model info and agent selector — hidden in RP mode */}
       <div
         className="avatar-header"
         onMouseEnter={rpMode ? undefined : () => setShowTooltip(true)}
         onMouseLeave={rpMode ? undefined : () => setShowTooltip(false)}
+        style={rpMode ? { display: 'none' } : undefined}
       >
         <div className="avatar-info">
           {onInternSelect ? (

@@ -16,6 +16,7 @@ interface VirtualAssistantChatProps {
   messages: ChatMessage[];
   onSendMessage?: (message: string) => void;
   isStreaming?: boolean;
+  onEndRp?: () => void;
 }
 
 /**
@@ -25,7 +26,8 @@ interface VirtualAssistantChatProps {
 export const VirtualAssistantChat: FC<VirtualAssistantChatProps> = ({
   messages,
   onSendMessage,
-  isStreaming = false
+  isStreaming = false,
+  onEndRp,
 }) => {
   const [input, setInput] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -83,6 +85,15 @@ export const VirtualAssistantChat: FC<VirtualAssistantChatProps> = ({
       {/* Input Area */}
       {onSendMessage && (
         <form onSubmit={handleSubmit} className="virtual-assistant-chat__input">
+          {onEndRp && (
+            <button
+              type="button"
+              onClick={onEndRp}
+              className="virtual-assistant-chat__end-btn"
+            >
+              End
+            </button>
+          )}
           <input
             type="text"
             value={input}

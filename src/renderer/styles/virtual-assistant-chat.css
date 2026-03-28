@@ -5,7 +5,7 @@
 
 .virtual-assistant-chat {
   position: absolute;
-  top: 60px; /* Below the avatar-header bar */
+  top: calc(var(--titlebar-height, 38px) + 50px); /* Below titlebar + avatar-header */
   left: 0;
   right: 0;
   bottom: 0;
@@ -267,4 +267,25 @@
 .virtual-assistant-chat__input-send svg {
   width: 18px;
   height: 18px;
+}
+
+/* End RP button (inline with input) */
+.virtual-assistant-chat__end-btn {
+  height: 40px;
+  padding: 0 16px;
+  border-radius: 24px;
+  background: rgba(255, 50, 50, 0.15);
+  border: 1px solid rgba(255, 50, 50, 0.4);
+  color: #ff5555;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: all 0.2s ease;
+}
+
+.virtual-assistant-chat__end-btn:hover {
+  background: rgba(255, 50, 50, 0.3);
+  border-color: rgba(255, 50, 50, 0.7);
 }

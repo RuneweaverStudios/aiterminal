@@ -1071,6 +1071,10 @@ export const App: FC = () => {
                         }
                     }
                     isStreaming={rpMode ? elevenAgent.isSpeaking : chat.state.isStreaming}
+                    onEndRp={rpMode ? async () => {
+                      setRpMode(false);
+                      await elevenAgent.stop();
+                    } : undefined}
                   />
                 )}
               </div>

@@ -70,6 +70,9 @@ export function useElevenLabsAgent(): UseElevenLabsAgentReturn {
 
   const start = useCallback(async () => {
     try {
+      // Clear messages BEFORE starting session to avoid race with onMessage
+      setMessages([]);
+
       // Request microphone access first
       await navigator.mediaDevices.getUserMedia({ audio: true });
 
@@ -82,7 +85,6 @@ export function useElevenLabsAgent(): UseElevenLabsAgentReturn {
 
       const id = conversation.getId();
       if (id) setConversationId(id);
-      setMessages([]);
     } catch (err) {
       console.error('[ElevenLabsAgent] Failed to start:', err);
     }
