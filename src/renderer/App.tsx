@@ -717,12 +717,6 @@ export const App: FC = () => {
   // Chat send handler
   // -------------------------------------------------------------------------
 
-  const handleChatSend = useCallback(() => {
-    const msg = chat.state.inputValue.trim()
-    if (msg.length === 0) return
-    chat.sendMessage(msg)
-    chat.setInputValue('')
-  }, [chat.state.inputValue, chat.sendMessage, chat.setInputValue])
 
   // -------------------------------------------------------------------------
   // Chat resize handler
@@ -944,7 +938,6 @@ export const App: FC = () => {
                 }))}
                 onSendMessage={async (text) => {
                   await chat.sendMessage(text)
-                  handleChatSend()
                 }}
                 backend={backendSelector.activeBackend}
                 claudeCodeStream={backendSelector.claudeCodeStream}

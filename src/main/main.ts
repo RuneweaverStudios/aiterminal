@@ -69,7 +69,7 @@ For DESTRUCTIVE commands (rm, kill, drop, etc.), do NOT auto-execute. Instead ex
 
 For questions/explanations that don't need a command, just respond naturally without [RUN] tags.
 
-Be extremely concise. 1-2 sentences max unless the user asks for detail.`;
+Keep responses brief and helpful. Always finish your sentences.`;
 
 function createAIClient(): OpenRouterClient | null {
   const apiKey = process.env.OPENROUTER_API_KEY;
