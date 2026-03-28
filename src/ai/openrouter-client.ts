@@ -229,7 +229,7 @@ export class OpenRouterClient implements IAIClient {
 
   async *streamQuery(request: AIRequest): AsyncIterable<string> {
     try {
-      const modelId = resolveModelForTask(
+      const modelId = request.modelOverride ?? resolveModelForTask(
         request.taskType,
         this.activePresetName,
       );

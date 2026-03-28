@@ -82,6 +82,8 @@ export interface AIQueryRequest {
   readonly prompt: string;
   readonly taskType: string;
   readonly context?: ReadonlyArray<{ role: 'user' | 'assistant' | 'system'; content: string }>;
+  /** Override the model ID (bypasses preset routing). Used by RP mode. */
+  readonly modelOverride?: string;
 }
 
 /** Active model for a task type + current router preset (from main process). */

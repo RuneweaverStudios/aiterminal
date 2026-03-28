@@ -75,6 +75,10 @@ interface InternAvatarProps {
   // VRM chat toggle
   showVrmChat?: boolean;
   onToggleVrmChat?: () => void;
+  // RP mode
+  rpMode?: boolean;
+  onToggleRpMode?: () => void;
+  activeModel?: string;
 }
 
 export function InternAvatar({
@@ -87,7 +91,10 @@ export function InternAvatar({
   activeSessionCwd,
   activeSessionId,
   showVrmChat = false,
-  onToggleVrmChat
+  onToggleVrmChat,
+  rpMode = false,
+  onToggleRpMode,
+  activeModel,
 }: InternAvatarProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const vrmRef = useRef<any>(null);
@@ -1235,6 +1242,16 @@ export function InternAvatar({
           )}
         </div>
         <div className="avatar-controls">
+          {onToggleRpMode && (
+            <button
+              className={`chat-toggle ${rpMode ? 'active' : ''}`}
+              onClick={onToggleRpMode}
+              title={rpMode ? 'Exit RP mode' : 'Enter RP mode'}
+              style={rpMode ? { background: 'rgba(255, 107, 157, 0.3)', borderColor: 'rgba(255, 107, 157, 0.5)' } : undefined}
+            >
+              🎭
+            </button>
+          )}
           {onToggleVrmChat && (
             <button
               className={`chat-toggle ${showVrmChat ? 'active' : ''}`}
@@ -1243,6 +1260,20 @@ export function InternAvatar({
             >
               💬
             </button>
+          )}
+          {activeModel && (
+            <span style={{
+              fontSize: '9px',
+              color: rpMode ? '#ff6b9d' : 'rgba(255,255,255,0.4)',
+              fontWeight: 600,
+              letterSpacing: '0.03em',
+              maxWidth: '80px',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+            }}>
+              {activeModel}
+            </span>
           )}
           <span className={`status-indicator ${isRunning ? 'running' : 'idle'}`}>
             {isRunning ? '● Working' : '○ Idle'}

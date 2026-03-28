@@ -118,7 +118,7 @@ export interface UseChatReturn {
   readonly toggle: () => void
   readonly setWidth: (width: number) => void
   readonly setAvatarHeight: (height: number) => void
-  readonly sendMessage: (content: string) => Promise<void>
+  readonly sendMessage: (content: string, modelOverride?: string) => Promise<void>
   readonly clearMessages: () => void
   readonly addAttachment: (file: FileAttachment) => void
   readonly removeAttachment: (path: string) => void
@@ -231,7 +231,7 @@ export function useChat(): UseChatReturn {
   }, [])
 
   const sendMessage = useCallback(
-    async (content: string) => {
+    async (content: string, modelOverride?: string) => {
       const trimmed = content.trim()
       if (trimmed.length === 0) return
 
@@ -313,7 +313,7 @@ export function useChat(): UseChatReturn {
             const MAX_SPOKEN_SENTENCES = 2 // Only speak first 2 sentences
 
             await api.aiQueryStream(
-              { prompt: fullPrompt, taskType: 'general', context },
+              { prompt: fullPrompt, taskType: 'general', context, modelOverride },
               (payload) => {
                 if (payload.chunk) {
                   accumulated += payload.chunk

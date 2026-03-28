@@ -161,6 +161,10 @@ export const App: FC = () => {
   // 3D model chat visibility - hidden by default to show avatar more clearly
   const [showVrmChat, setShowVrmChat] = useState(false)
 
+  // RP Mode: fullscreen VRM with minimax model for conversation
+  const [rpMode, setRpMode] = useState(false)
+  const RP_MODEL = 'minimax/minimax-m2-her'
+
   // TUI Mode: disable natural language interception for CLI tools
   const [tuiMode, setTuiMode] = useState(false)
   /** Same as `tuiMode` but updated synchronously — NL routing must not wait for re-render. */
@@ -1004,26 +1008,42 @@ export const App: FC = () => {
         )}
 
         {/* ── Right Sidebar (VRM avatar + chat overlay) ── */}
-        {(agentLoop.enabled || chat.state.isOpen) && (
+        {(agentLoop.enabled || chat.state.isOpen || rpMode) && (
           <>
-            <ResizeHandle
-              direction="horizontal"
-              onDrag={(delta) => resizablePanels.updateSize('rightSidebar', -delta)}
-            />
-            <div className="right-sidebar" style={{ width: resizablePanels.sizes.rightSidebar }}>
+            {!rpMode && (
+              <ResizeHandle
+                direction="horizontal"
+                onDrag={(delta) => resizablePanels.updateSize('rightSidebar', -delta)}
+              />
+            )}
+            <div
+              className="right-sidebar"
+              style={rpMode
+                ? { position: 'fixed', inset: 0, width: '100%', zIndex: 500 }
+                : { width: resizablePanels.sizes.rightSidebar }
+              }
+            >
               {/* VRM Avatar - full height */}
               <div className="right-sidebar__avatar">
                 <InternAvatar
                   intern={agentLoop.activeIntern || 'sora'}
                   isRunning={agentLoop.isRunning}
                   events={agentLoop.events}
-                  onInternSelect={agentLoop.setActiveIntern}
+                  onInternSelect={rpMode ? undefined : agentLoop.setActiveIntern}
                   isStreaming={chat.state.isOpen}
                   hasInput={false}
                   activeSessionCwd={activeTabCwd}
                   activeSessionId={terminalTabs.state.activeTabId ?? undefined}
-                  showVrmChat={showVrmChat}
-                  onToggleVrmChat={() => setShowVrmChat(prev => !prev)}
+                  showVrmChat={showVrmChat || rpMode}
+                  onToggleVrmChat={rpMode ? undefined : () => setShowVrmChat(prev => !prev)}
+                  rpMode={rpMode}
+                  onToggleRpMode={() => {
+                    setRpMode(prev => {
+                      if (!prev) setShowVrmChat(true) // auto-show chat when entering RP
+                      return !prev
+                    })
+                  }}
+                  activeModel={rpMode ? 'minimax-m2-her' : (chat.state.activeModelLabel || undefined)}
                 />
 
                 {/* Speech Bubbles - floating overlay */}
@@ -1033,11 +1053,11 @@ export const App: FC = () => {
                 />
 
                 {/* Virtual Assistant Chat - transparent overlay inside avatar container */}
-                {showVrmChat && (
+                {(showVrmChat || rpMode) && (
                   <VirtualAssistantChat
                     messages={[...chat.state.messages]}
                     onSendMessage={async (msg) => {
-                      await chat.sendMessage(msg)
+                      await chat.sendMessage(msg, rpMode ? RP_MODEL : undefined)
                       speechBubbles.addBubble(msg)
                     }}
                     isStreaming={chat.state.isStreaming}

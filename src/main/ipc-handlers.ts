@@ -152,6 +152,7 @@ export interface AIQueryRequest {
   readonly prompt: string;
   readonly taskType: string;
   readonly context?: ReadonlyArray<ContextMessage>;
+  readonly modelOverride?: string;
 }
 
 /** Streaming AI query — includes correlation id for chunk events. */
@@ -318,7 +319,7 @@ export function setupAllHandlers(
   });
 
   ipc.handle('ai-query-stream', async (event, request: AIQueryStreamRequest) => {
-    const { requestId, prompt, taskType, context } = request;
+    const { requestId, prompt, taskType, context, modelOverride } = request;
     const send = (payload: {
       requestId: string;
       chunk: string;
@@ -341,6 +342,7 @@ export function setupAllHandlers(
         prompt,
         taskType: tt,
         context: context ?? [],
+        modelOverride,
       };
 
       for await (const chunk of aiClient.streamQuery(aiRequest)) {

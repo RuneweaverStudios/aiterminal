@@ -42,6 +42,8 @@ export interface AIRequest {
   readonly context: ReadonlyArray<ContextMessage>;
   readonly taskType: TaskType;
   readonly maxTokens?: number;
+  /** Override model ID (bypasses preset routing) */
+  readonly modelOverride?: string;
 }
 
 export interface AIResponse {
