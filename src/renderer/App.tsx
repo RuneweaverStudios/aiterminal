@@ -401,6 +401,9 @@ export const App: FC = () => {
     if (isTuiCliInvocation(sanitized)) {
       tuiModeRef.current = true
       setTuiMode(true)
+      // Pre-activate greeting so it fires as soon as Claude Code starts
+      // (don't wait for the PTY escape sequence detection)
+      claudeCodeComments.activate()
     }
 
     // Skip natural language detection when in TUI mode (read ref, not stale state)
