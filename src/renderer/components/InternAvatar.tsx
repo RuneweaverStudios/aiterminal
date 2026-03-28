@@ -1243,14 +1243,32 @@ export function InternAvatar({
         </div>
         <div className="avatar-controls">
           {onToggleRpMode && (
-            <button
-              className={`chat-toggle ${rpMode ? 'active' : ''}`}
-              onClick={onToggleRpMode}
-              title={rpMode ? 'Exit RP mode' : 'Enter RP mode'}
-              style={rpMode ? { background: 'rgba(255, 107, 157, 0.3)', borderColor: 'rgba(255, 107, 157, 0.5)' } : undefined}
-            >
-              🎭
-            </button>
+            rpMode ? (
+              <button
+                className="chat-toggle active"
+                onClick={onToggleRpMode}
+                title="End conversation"
+                style={{
+                  background: 'rgba(255, 55, 55, 0.4)',
+                  borderColor: 'rgba(255, 55, 55, 0.6)',
+                  color: '#ff5555',
+                  fontSize: '10px',
+                  fontWeight: 700,
+                  padding: '4px 10px',
+                  letterSpacing: '0.05em',
+                }}
+              >
+                End
+              </button>
+            ) : (
+              <button
+                className="chat-toggle"
+                onClick={onToggleRpMode}
+                title="Enter RP mode"
+              >
+                🎭
+              </button>
+            )
           )}
           {onToggleVrmChat && (
             <button

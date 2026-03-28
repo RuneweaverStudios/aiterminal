@@ -676,31 +676,66 @@
 .right-sidebar--rp {
   position: fixed !important;
   inset: 0 !important;
-  width: 100% !important;
-  height: 100% !important;
+  width: 100vw !important;
+  height: 100vh !important;
+  max-width: none !important;
   z-index: 500 !important;
   border: none !important;
   background: #0a0a14 !important;
+  flex-shrink: 0 !important;
 }
 
 .right-sidebar--rp .right-sidebar__avatar {
-  position: absolute;
-  inset: 0;
+  position: absolute !important;
+  inset: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
 }
 
 .right-sidebar--rp .intern-avatar {
   height: 100% !important;
   width: 100% !important;
+  max-width: none !important;
 }
 
 .right-sidebar--rp .vrm-canvas-container {
   border-radius: 0 !important;
   width: 100% !important;
   height: 100% !important;
+  max-width: none !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
 }
 
 .right-sidebar--rp .vrm-canvas-container canvas {
   border-radius: 0 !important;
+  max-width: 100% !important;
+  max-height: 100% !important;
+}
+
+/* RP mode: constrain chat overlay so bubbles don't overflow */
+.right-sidebar--rp .virtual-assistant-chat {
+  position: absolute !important;
+  inset: 0 !important;
+  top: 50px !important;
+  overflow: hidden !important;
+}
+
+.right-sidebar--rp .virtual-assistant-chat__messages {
+  max-width: 600px !important;
+  margin: 0 auto !important;
+  padding-left: 20% !important;
+  padding-right: 20% !important;
+}
+
+/* RP mode: hide expression indicator and workspace context */
+.right-sidebar--rp .expression-indicator,
+.right-sidebar--rp .avatar-context {
+  display: none !important;
 }
 
 .right-sidebar__avatar .intern-avatar .avatar-header {
