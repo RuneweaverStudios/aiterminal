@@ -75,6 +75,9 @@ export function useElevenLabsAgent(): UseElevenLabsAgentReturn {
 
       await conversation.startSession({
         agentId: AGENT_ID,
+        connectionDelay: {
+          default: 1000, // 1s delay to let audio settle before listening
+        },
       });
 
       const id = conversation.getId();

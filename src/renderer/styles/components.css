@@ -675,27 +675,35 @@
 /* RP Mode: fullscreen VRM viewer */
 .right-sidebar--rp {
   position: fixed !important;
-  inset: 0 !important;
-  width: 100vw !important;
-  height: 100vh !important;
+  top: 0 !important;
+  left: 0 !important;
+  right: 0 !important;
+  bottom: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
   max-width: none !important;
   z-index: 500 !important;
   border: none !important;
   background: #0a0a14 !important;
-  flex-shrink: 0 !important;
-  overflow: hidden !important;
+  overflow: visible !important;
 }
 
-.right-sidebar--rp .right-sidebar__avatar {
-  position: absolute !important;
-  inset: 0 !important;
-  width: 100vw !important;
-  height: 100vh !important;
-}
-
-.right-sidebar--rp .right-sidebar__avatar .intern-avatar {
-  height: 100% !important;
+.right-sidebar--rp > .right-sidebar__avatar {
+  position: fixed !important;
+  top: 0 !important;
+  left: 0 !important;
   width: 100% !important;
+  height: 100% !important;
+  overflow: visible !important;
+}
+
+.right-sidebar--rp .intern-avatar,
+.right-sidebar--rp .right-sidebar__avatar .intern-avatar {
+  position: fixed !important;
+  top: 0 !important;
+  left: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
   max-width: none !important;
   padding: 0 !important;
   border: none !important;
@@ -707,31 +715,33 @@
 
 .right-sidebar--rp .vrm-canvas-container,
 .right-sidebar--rp .right-sidebar__avatar .intern-avatar .vrm-canvas-container {
-  border-radius: 0 !important;
-  width: 100vw !important;
-  height: 100vh !important;
+  position: fixed !important;
+  top: 0 !important;
+  left: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
   max-width: none !important;
-  position: absolute !important;
-  inset: 0 !important;
+  border-radius: 0 !important;
   box-shadow: none !important;
+  background: #0a0a14 !important;
 }
 
 .right-sidebar--rp .vrm-canvas-container canvas {
   border-radius: 0 !important;
-  /* Let Three.js handle canvas sizing — don't stretch */
-  object-fit: contain !important;
 }
 
-/* RP mode: header stays above everything */
-.right-sidebar--rp .avatar-header {
-  z-index: 30 !important;
+/* RP mode: header — fixed, centered, ABOVE everything, interactive */
+.right-sidebar--rp .avatar-header,
+.right-sidebar--rp .right-sidebar__avatar .intern-avatar .avatar-header {
   position: fixed !important;
-  top: 12px !important;
+  top: 8px !important;
   left: 50% !important;
   transform: translateX(-50%) !important;
   right: auto !important;
   width: auto !important;
   min-width: 200px !important;
+  z-index: 600 !important;
+  pointer-events: auto !important;
 }
 
 /* RP mode: chat overlay centered */
@@ -742,18 +752,21 @@
   transform: translateX(-50%) !important;
   width: 60% !important;
   max-width: 700px !important;
-  bottom: 0 !important;
+  bottom: 60px !important;
   right: auto !important;
   overflow: hidden !important;
+  z-index: 550 !important;
 }
 
-/* RP mode: input bar full width at bottom */
+/* RP mode: input bar centered at bottom */
 .right-sidebar--rp .virtual-assistant-chat__input {
   position: fixed !important;
   bottom: 0 !important;
-  left: 0 !important;
-  right: 0 !important;
-  width: 100% !important;
+  left: 50% !important;
+  transform: translateX(-50%) !important;
+  width: 60% !important;
+  max-width: 700px !important;
+  z-index: 550 !important;
 }
 
 /* RP mode: hide non-essential UI elements */
@@ -766,7 +779,7 @@
 
 .right-sidebar__avatar .intern-avatar .avatar-header {
   position: absolute;
-  top: calc(var(--titlebar-height, 38px) + 8px);
+  top: 8px;
   left: 12px;
   right: 12px;
   z-index: 20; /* Above chat overlay */
@@ -829,7 +842,7 @@
 
 .right-sidebar__avatar .intern-avatar .avatar-header {
   position: absolute;
-  top: calc(var(--titlebar-height, 38px) + 8px);
+  top: 8px;
   left: 12px;
   right: 12px;
   z-index: 100;
