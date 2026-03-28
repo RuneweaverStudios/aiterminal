@@ -5,7 +5,7 @@
 
 .virtual-assistant-chat {
   position: absolute;
-  top: 50px; /* Below the avatar-header bar */
+  top: calc(var(--titlebar-height, 38px) + 50px); /* Below titlebar + avatar-header */
   left: 0;
   right: 0;
   bottom: 0;
