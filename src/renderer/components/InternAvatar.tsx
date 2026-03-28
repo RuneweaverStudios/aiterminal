@@ -1223,8 +1223,8 @@ export function InternAvatar({
       {/* Header with model info and agent selector */}
       <div
         className="avatar-header"
-        onMouseEnter={() => setShowTooltip(true)}
-        onMouseLeave={() => setShowTooltip(false)}
+        onMouseEnter={rpMode ? undefined : () => setShowTooltip(true)}
+        onMouseLeave={rpMode ? undefined : () => setShowTooltip(false)}
       >
         <div className="avatar-info">
           {onInternSelect ? (
