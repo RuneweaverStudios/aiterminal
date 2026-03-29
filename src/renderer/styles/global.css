@@ -7,7 +7,14 @@
   --terminal-fg: #f8f8f2;
   --terminal-cursor: #f8f8f2;
   --terminal-cursor-accent: #282a36;
-  --terminal-selection: rgba(189, 147, 249, 0.25);
+  --terminal-selection: rgba(20, 184, 166, 0.2);
+
+  /* UI accent — decoupled from ANSI blue so terminal colors stay correct */
+  --accent-color: #14b8a6;
+  --accent-bright: #2dd4bf;
+  --accent-muted: #0d9488;
+  --accent-glow: rgba(20, 184, 166, 0.3);
+  --accent-selection: rgba(20, 184, 166, 0.2);
 
   --ansi-black: #21222c;
   --ansi-red: #ff5555;
@@ -34,8 +41,8 @@
   --glass-sidebar-bg: rgba(40, 42, 54, 0.88);
   --glass-sidebar-blur: 28px;
   --glass-border: rgba(255, 255, 255, 0.08);
-  --glass-border-accent: rgba(189, 147, 249, 0.2);
-  --accent-gradient: linear-gradient(135deg, var(--ansi-blue), var(--ansi-magenta));
+  --glass-border-accent: var(--accent-glow);
+  --accent-gradient: linear-gradient(135deg, var(--accent-color), #06b6d4);
 
   --titlebar-height: 38px;
   --statusbar-height: 28px;
@@ -244,6 +251,11 @@ html {
   width: 16px;
   height: 16px;
   fill: currentColor;
+}
+
+.titlebar__toggle--active {
+  opacity: 1;
+  color: var(--accent-color, #14b8a6);
 }
 
 /* Status bar */

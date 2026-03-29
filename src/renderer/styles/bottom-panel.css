@@ -1,0 +1,128 @@
+/* VS Code-style bottom panel */
+
+.bottom-panel {
+  display: flex;
+  flex-direction: column;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(25, 27, 35, 0.95);
+  flex-shrink: 0;
+  min-height: 120px;
+}
+
+/* Tab bar */
+.panel-tab-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 35px;
+  padding: 0 8px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  flex-shrink: 0;
+  user-select: none;
+}
+
+.panel-tab-bar__tabs {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  height: 100%;
+}
+
+.panel-tab-bar__tab {
+  position: relative;
+  padding: 0 12px;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: none;
+  border: none;
+  color: rgba(255, 255, 255, 0.4);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  cursor: pointer;
+  transition: color 0.1s ease;
+  font-family: inherit;
+}
+
+.panel-tab-bar__tab:hover {
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.panel-tab-bar__tab--active {
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.panel-tab-bar__tab--active::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 12px;
+  right: 12px;
+  height: 1px;
+  background: var(--accent-color, #14b8a6);
+}
+
+.panel-tab-bar__badge {
+  font-size: 9px;
+  min-width: 16px;
+  height: 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  background: var(--accent-color, #14b8a6);
+  color: #000;
+  font-weight: 700;
+  padding: 0 4px;
+}
+
+.panel-tab-bar__actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.panel-tab-bar__action {
+  width: 22px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  border-radius: 3px;
+  color: rgba(255, 255, 255, 0.4);
+  cursor: pointer;
+  transition: all 0.1s ease;
+}
+
+.panel-tab-bar__action:hover {
+  color: rgba(255, 255, 255, 0.8);
+  background: rgba(255, 255, 255, 0.08);
+}
+
+/* Content area */
+.bottom-panel__content {
+  flex: 1;
+  overflow: hidden;
+  display: flex;
+  min-height: 0;
+}
+
+.bottom-panel__pane {
+  flex: 1;
+  position: relative;
+  overflow: hidden;
+  min-height: 0;
+}
+
+.bottom-panel__empty {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.3);
+}

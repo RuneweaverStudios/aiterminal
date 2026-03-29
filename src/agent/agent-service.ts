@@ -114,19 +114,44 @@ export function parseAgentResponse(
   }
 
   // Parse [READ:path] tags — forgiving: closing ] optional
-  const readRegex = /\[READ:([^\]\n]+)\]?/g
+  // Budget models sometimes list multiple files: [READ:a.ts] b.ts] c.ts]
+  // or [READ:a.ts b.ts c.ts] — handle both patterns
+  // Also handle <tool_call>READ:path (budget model XML hallucination)
+  const readRegex = /(?:\[READ:|<tool_call>READ:)([^\]\n<]+)\]?/g
 
   while ((match = readRegex.exec(aiContent)) !== null) {
-    const filePath = sanitizeFilePath(match[1])
-    if (!filePath) continue
+    const rawPaths = match[1].trim()
 
-    operations.push({
-      id: generateId('op'),
-      type: 'read',
-      filePath,
-      description: `Read ${filePath}`,
-      status: 'pending',
-    })
+    // Check if it contains multiple space-separated paths (budget model pattern)
+    // Heuristic: if it contains spaces and each segment looks like a file path
+    const segments = rawPaths.split(/\s+/)
+    const allLookLikeFiles = segments.length > 1 &&
+      segments.every(s => /[./]/.test(s) || /\.\w+$/.test(s))
+
+    if (allLookLikeFiles) {
+      // Multiple files in one tag — split them
+      for (const seg of segments) {
+        const filePath = sanitizeFilePath(seg.replace(/\]$/, ''))
+        if (!filePath) continue
+        operations.push({
+          id: generateId('op'),
+          type: 'read',
+          filePath,
+          description: `Read ${filePath}`,
+          status: 'pending',
+        })
+      }
+    } else {
+      const filePath = sanitizeFilePath(rawPaths)
+      if (!filePath) continue
+      operations.push({
+        id: generateId('op'),
+        type: 'read',
+        filePath,
+        description: `Read ${filePath}`,
+        status: 'pending',
+      })
+    }
   }
 
   // Parse [DELETE:path] tags

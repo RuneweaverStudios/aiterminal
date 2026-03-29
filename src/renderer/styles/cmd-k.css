@@ -100,7 +100,7 @@
   font-family: "SF Mono", "Cascadia Code", "Fira Code", "JetBrains Mono", "Menlo", "Consolas", monospace;
   font-size: 16px;
   line-height: 52px;
-  caret-color: var(--ansi-blue, #bd93f9);
+  caret-color: var(--accent-color, #14b8a6);
 }
 
 .cmd-k-input::placeholder {
@@ -137,7 +137,7 @@
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: var(--ansi-blue, #bd93f9);
+  background: var(--accent-color, #14b8a6);
   animation: pulseDot 1.4s ease-in-out infinite;
 }
 
@@ -201,7 +201,7 @@
 }
 
 .cmd-k-result--explanation {
-  border-left: 2px solid var(--ansi-blue, #bd93f9);
+  border-left: 2px solid var(--accent-color, #14b8a6);
 }
 
 .cmd-k-result--diff {

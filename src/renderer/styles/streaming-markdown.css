@@ -1,0 +1,130 @@
+/* StreamingMarkdown — enhanced markdown rendering for AI responses */
+
+.streaming-markdown {
+  position: relative;
+  line-height: 1.5;
+}
+
+.streaming-markdown__content {
+  overflow-wrap: break-word;
+  word-break: break-word;
+}
+
+.streaming-markdown__cursor {
+  display: inline;
+  animation: blink 1s step-end infinite;
+  color: var(--accent-color, #14b8a6);
+  font-weight: 400;
+}
+
+/* Code blocks with copy button */
+.streaming-markdown__code-wrapper {
+  position: relative;
+  margin: 8px 0;
+  border-radius: 6px;
+  overflow: hidden;
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.streaming-markdown__code-wrapper pre {
+  margin: 0;
+  padding: 12px;
+  overflow-x: auto;
+}
+
+.streaming-markdown__code-wrapper code {
+  font-family: 'SF Mono', 'Cascadia Code', 'Fira Code', monospace;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.code-block__copy {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  padding: 2px 8px;
+  font-size: 10px;
+  font-family: inherit;
+  color: rgba(255, 255, 255, 0.4);
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 4px;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.streaming-markdown__code-wrapper:hover .code-block__copy {
+  opacity: 1;
+}
+
+.code-block__copy:hover {
+  color: rgba(255, 255, 255, 0.8);
+  background: rgba(255, 255, 255, 0.1);
+}
+
+/* Inline code */
+.streaming-markdown__inline-code {
+  background: rgba(0, 0, 0, 0.25);
+  padding: 2px 4px;
+  border-radius: 3px;
+  font-family: 'SF Mono', 'Cascadia Code', monospace;
+  font-size: 0.9em;
+}
+
+/* TextShimmer — dual-layer thinking indicator */
+.text-shimmer {
+  position: relative;
+  display: inline-block;
+}
+
+.text-shimmer__base {
+  color: rgba(255, 255, 255, 0.4);
+}
+
+.text-shimmer__shimmer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.6) 50%,
+    transparent 100%
+  );
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  opacity: 0;
+  transition: opacity 0.22s;
+}
+
+.text-shimmer--active .text-shimmer__shimmer {
+  opacity: 1;
+  animation: shimmerSweep 1.5s linear infinite;
+}
+
+@keyframes shimmerSweep {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+/* ProcessBadge — color-coded 3-letter type badge */
+.process-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 28px;
+  height: 16px;
+  padding: 0 4px;
+  font-size: 9px;
+  font-weight: 700;
+  font-family: 'SF Mono', 'Cascadia Code', monospace;
+  letter-spacing: 0.5px;
+  border: 1px solid;
+  border-radius: 3px;
+  background: rgba(0, 0, 0, 0.2);
+  flex-shrink: 0;
+}

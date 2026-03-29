@@ -16,6 +16,51 @@ import { useSessionHistory } from './useSessionHistory'
 import { getAgentLoopState } from '@/types/agent-loop-state'
 
 // ---------------------------------------------------------------------------
+// Shared tag stripping — single source of truth for streaming + post-stream
+// ---------------------------------------------------------------------------
+
+/**
+ * Strip ALL tool tags from AI output for display. Used during streaming
+ * (progressive) and after streaming (final). Handles every model format.
+ */
+function stripAllToolTags(text: string): string {
+  return text
+    // RUN tags: hybrid [RUN:label]body[/RUN] first (requires closing tag)
+    .replace(/\[RUN:[^\]]*\][\s\S]*?\[\/(?:RUN\]?)?/g, '')
+    // RUN tags: wrapper [RUN]body[/RUN] or [RUN]body (to end)
+    .replace(/\[RUN\][\s\S]*?(?:\[\/(?:RUN\]?)?|$)/gs, '')
+    // RUN tags: standalone colon [RUN:cmd]
+    .replace(/\[RUN:[^\]]*\]/g, '')
+    // File operation tags
+    .replace(/\[FILE:[^\]]*?\][\s\S]*?(?:\[\/FILE\]|$)/g, '')
+    .replace(/\[EDIT:[^\]]*?\][\s\S]*?(?:\[\/EDIT\]|$)/g, '')
+    .replace(/\[DELETE:[^\]]*?\]?/g, '')
+    .replace(/\[MEMORY:\w+\][\s\S]*?(?:\[\/MEMORY\]|$)/g, '')
+    .replace(/\[USER:\w+\][\s\S]*?(?:\[\/USER\]|$)/g, '')
+    .replace(/\[READ:[^\]\n]+\]?/g, '')
+    // Budget model junk: leftover "filename]" fragments from multi-file [READ:a] b] c]
+    .replace(/\s+[\w./-]+\]/g, (match) => {
+      // Only strip if it looks like a file path fragment (has extension or slash)
+      return /[./]/.test(match) ? '' : match
+    })
+    // Orphaned closing tags
+    .replace(/\[\/(?:RUN|READ|FILE|EDIT|DELETE)\]?/g, '')
+    // Partial tags mid-stream
+    .replace(/\[(?:RUN|READ|FILE|EDIT|DELETE)(?::[^\]]*)?$/g, '')
+    .replace(/\[\//g, '')
+    // Non-standard tag variants (budget model hallucinations)
+    .replace(/\{(?:READ|exec|RUN|EDIT|FILE):[^}]*\}?/gi, '')
+    .replace(/\(voice\)\s*"[^"]*"/g, '')
+    .replace(/<tool_call>[\s\S]*?(?:<\/tool_call>|$)/g, '')
+    .replace(/<tool_call>[^\n]*/g, '')
+    .replace(/<function[\s\S]*?(?:<\/function>|$)/g, '')
+    .replace(/<parameter[\s\S]*?(?:<\/parameter>|$)/g, '')
+    .replace(/CAUTION\s*\([^)]*\)/gi, '')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim()
+}
+
+// ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
 
@@ -98,6 +143,40 @@ function extractFileOps(raw: string): { text: string; operations: ReadonlyArray<
   }
 
   return { text, operations }
+}
+
+// ---------------------------------------------------------------------------
+// Memory tag processing (Hermes-style self-learning)
+// ---------------------------------------------------------------------------
+
+/**
+ * Process [MEMORY:action]content[/MEMORY] and [USER:action]content[/USER] tags.
+ * Calls the main process memory-tool IPC handler.
+ */
+function processMemoryTags(text: string): void {
+  const api = window.electronAPI
+  if (!api?.memoryTool) return
+
+  // [MEMORY:add]content[/MEMORY]
+  const memoryRegex = /\[MEMORY:(add|replace|remove)\]([\s\S]*?)(?:\[\/MEMORY\]|$)/g
+  let match: RegExpExecArray | null
+  while ((match = memoryRegex.exec(text)) !== null) {
+    const action = match[1]
+    const content = match[2].trim()
+    if (content) {
+      api.memoryTool({ action, file: 'MEMORY.md', content }).catch(() => {})
+    }
+  }
+
+  // [USER:add]content[/USER]
+  const userRegex = /\[USER:(add|replace|remove)\]([\s\S]*?)(?:\[\/USER\]|$)/g
+  while ((match = userRegex.exec(text)) !== null) {
+    const action = match[1]
+    const content = match[2].trim()
+    if (content) {
+      api.memoryTool({ action, file: 'USER.md', content }).catch(() => {})
+    }
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -271,7 +350,9 @@ function summarizeForTTS(accumulated: string): string {
     .replace(/\[FILE:[^\]]*?\][\s\S]*?(?:\[\/FILE\]|$)/g, '')
     .replace(/\[EDIT:[^\]]*?\][\s\S]*?(?:\[\/EDIT\]|$)/g, '')
     .replace(/\[DELETE:[^\]]*?\]?/g, '')
-    .replace(/\[READ:[^\]]*?\]?/g, '')
+    .replace(/\[MEMORY:\w+\][\s\S]*?(?:\[\/MEMORY\]|$)/g, '')
+    .replace(/\[USER:\w+\][\s\S]*?(?:\[\/USER\]|$)/g, '')
+    .replace(/\[READ:[^\]\n]+\]?/g, '')
     .replace(/\[(?:RUN|READ|FILE|EDIT|DELETE)(?::[^\]]*)?$/g, '')
     .replace(/\[\/[A-Z]*\]?/g, '')
     .replace(/\{(?:READ|exec|RUN|EDIT|FILE):[^}]*\}?/gi, '')
@@ -301,9 +382,10 @@ function summarizeForTTS(accumulated: string): string {
     .replace(/Dependencies:[^\n]*/g, '')
     .replace(/Available CLI[^\n]*/g, '')
     .replace(/How to Customize:[^\n]*/g, '')
-    .replace(/<tool_call>[\s\S]*?<\/tool_call>/g, '')
-    .replace(/<function[\s\S]*?<\/function>/g, '')
-    .replace(/<parameter[\s\S]*?<\/parameter>/g, '')
+    .replace(/<tool_call>[\s\S]*?(?:<\/tool_call>|$)/g, '')
+    .replace(/<tool_call>[^\n]*/g, '')
+    .replace(/<function[\s\S]*?(?:<\/function>|$)/g, '')
+    .replace(/<parameter[\s\S]*?(?:<\/parameter>|$)/g, '')
     // Strip lines that look like code/config/output
     .split('\n')
     .filter(line => {
@@ -322,20 +404,18 @@ function summarizeForTTS(accumulated: string): string {
 
   if (clean.length === 0) return ''
 
-  // Take first 2 natural-language sentences
+  // Take first sentence only, capped at 80 chars for short spoken output
   const sentences = clean.match(/[^.!?]+[.!?]+/g)
   if (sentences && sentences.length > 0) {
-    return sentences
-      .slice(0, 2)
-      .map(s => s.trim())
-      .filter(s => s.length > 10)
-      .join(' ')
-      .trim()
+    const first = sentences[0].trim()
+    if (first.length > 10) {
+      return first.length > 80 ? first.slice(0, 77).trim() + '...' : first
+    }
   }
 
-  // Fallback: first 100 chars if it looks like natural language
+  // Fallback: first 60 chars
   if (clean.length > 10 && /[a-z]/.test(clean)) {
-    return clean.length > 100 ? clean.slice(0, 100).trim() + '...' : clean
+    return clean.length > 60 ? clean.slice(0, 57).trim() + '...' : clean
   }
 
   return ''
@@ -504,8 +584,8 @@ export function useChat(): UseChatReturn {
       const modePrefix = chatMode === 'plan'
         ? '[PLAN MODE] Describe what changes you would make and why, but do NOT use [FILE], [EDIT], or [DELETE] tags. Only analyze and explain your plan.\n\n'
         : chatMode === 'autocode'
-        ? '[AUTOCODE MODE] You have full autonomy. DO NOT suggest actions — TAKE them directly. Use [READ:path] to read files, [EDIT:path] to fix code, [RUN]command[/RUN] to execute commands. Act immediately without asking permission. If you find errors, read the file, fix it, and verify. Never say "you should" — just do it.\n\n'
-        : 'Use your tool tags to take action. Read files with [READ:path], run commands with [RUN]command[/RUN], edit files with [EDIT:path]. Act proactively — do not just describe what you would do.\n\n'
+        ? '[AUTOCODE MODE] You have full autonomy. DO NOT suggest actions — TAKE them directly. Use [READ:path] to read files, [EDIT:path] to fix code, [RUN:command] to execute commands (e.g. [RUN:npm test], [RUN:cargo build]). Act immediately without asking permission. If you find errors, read the file, fix it, and verify. Never say "you should" — just do it.\n\n'
+        : 'Use your tool tags to take action. Read files with [READ:path], run commands with [RUN:command] (e.g. [RUN:ls], [RUN:npm test]), edit files with [EDIT:path]. Act proactively — do not just describe what you would do.\n\n'
 
       const allContext = [persistentFiles, fileContext].filter(Boolean).join('\n\n')
       const fullPrompt = modePrefix + (allContext
@@ -529,17 +609,56 @@ export function useChat(): UseChatReturn {
 
           const applyRunTags = (raw: string): string => {
             let text = raw
-            // Extract [RUN] commands — very forgiving: handles [/RUN], [/RUN, [/, or end of string
-            const runRegex = /\[RUN\](.*?)(?:\[\/(?:RUN\]?)?|$)/gs
             const commands: string[] = []
+            const seen = new Set<string>()
             let match: RegExpExecArray | null
-            while ((match = runRegex.exec(text)) !== null) {
-              commands.push(match[1].trim())
+
+            const addCmd = (cmd: string) => {
+              const c = cmd.trim()
+              if (c && !seen.has(c)) { seen.add(c); commands.push(c) }
             }
+
+            // Format A: [RUN:label]actual command[/RUN] — hybrid (budget model confusion)
+            // The label is junk like "command" or "shell", the body is the real command
+            const hybridRegex = /\[RUN:[^\]]*\]([\s\S]*?)\[\/(?:RUN\]?)?/g
+            while ((match = hybridRegex.exec(text)) !== null) {
+              const body = match[1].trim()
+              // Only accept if body looks like an actual command (has a program name)
+              if (body && /^[\w.\/~$-]/.test(body)) addCmd(body)
+            }
+
+            // Format B: [RUN]command[/RUN] (canonical wrapper format)
+            const wrapperRegex = /\[RUN\](.*?)(?:\[\/(?:RUN\]?)?|$)/gs
+            while ((match = wrapperRegex.exec(text)) !== null) {
+              addCmd(match[1])
+            }
+
+            // Format C: [RUN:command] (pure colon format — budget models)
+            const colonRegex = /\[RUN:([^\]]+)\]/g
+            while ((match = colonRegex.exec(text)) !== null) {
+              const cmd = match[1].trim()
+              // Skip generic labels like "command", "shell", "terminal"
+              if (cmd && !/^(?:command|shell|terminal|run|exec|execute)$/i.test(cmd)) {
+                addCmd(cmd)
+              }
+            }
+
+            // Format D: ```bash\ncommand\n``` (code block fallback, autocode only)
+            if (commands.length === 0 && chatMode === 'autocode') {
+              const bashBlockRegex = /```(?:bash|sh|shell|zsh)\n([\s\S]*?)```/g
+              while ((match = bashBlockRegex.exec(text)) !== null) {
+                const lines = match[1].trim().split('\n')
+                for (const line of lines) {
+                  const cmd = line.trim()
+                  if (cmd && !cmd.startsWith('#')) addCmd(cmd)
+                }
+              }
+            }
+
             if (commands.length === 0) return text
 
-            // Strip tags from display (very forgiving pattern)
-            text = text.replace(/\[RUN\].*?(?:\[\/(?:RUN\]?)?|$)/gs, '').trim()
+            // Strip all tag variants from display using shared function
+            text = stripAllToolTags(text)
 
             if (chatMode === 'autocode') {
               // AUTOCODE: execute commands in the active terminal and capture output
@@ -602,28 +721,7 @@ export function useChat(): UseChatReturn {
                 if (payload.chunk) {
                   accumulated += payload.chunk
 
-                  // Strip ALL tool tags during streaming — ultra-forgiving patterns
-                  const displayText = accumulated
-                    .replace(/\[RUN\].*?(?:\[\/(?:RUN\]?)?|$)/gs, '')
-                    .replace(/\[RUN:[^\]]*?\](?:\s*\[\/RUN\]?)?/g, '')
-                    .replace(/\[FILE:[^\]]*?\][\s\S]*?(?:\[\/FILE\]|$)/g, '')
-                    .replace(/\[EDIT:[^\]]*?\][\s\S]*?(?:\[\/EDIT\]|$)/g, '')
-                    .replace(/\[DELETE:[^\]]*?\]?/g, '')
-                    .replace(/\[READ:[^\]]*?\]?/g, '')
-                    // Strip orphaned closing tags
-                    .replace(/\[\/(?:RUN|READ|FILE|EDIT|DELETE)\]?/g, '')
-                    // Strip partial tags mid-stream
-                    .replace(/\[(?:RUN|READ|FILE|EDIT|DELETE)(?::[^\]]*)?$/g, '')
-                    .replace(/\[\//g, '') // bare [/ fragments
-                    // Strip non-standard tag variants
-                    .replace(/\{(?:READ|exec|RUN|EDIT|FILE):[^}]*\}?/gi, '')
-                    .replace(/\(voice\)\s*"[^"]*"/g, '')
-                    .replace(/<tool_call>[\s\S]*?<\/tool_call>/g, '')
-                    .replace(/<function[\s\S]*?<\/function>/g, '')
-                    .replace(/<parameter[\s\S]*?<\/parameter>/g, '')
-                    .replace(/CAUTION\s*\([^)]*\)/gi, '')
-                    .replace(/\n{3,}/g, '\n\n')
-                    .trim()
+                  const displayText = stripAllToolTags(accumulated)
 
                   setMessages((prev) =>
                     prev.map((m) =>
@@ -641,6 +739,10 @@ export function useChat(): UseChatReturn {
                   )
                 }
                 if (payload.done && (payload.modelLabel || payload.usage)) {
+                  // Update the active model label so the input area reflects what was used
+                  if (payload.modelLabel) {
+                    setActiveModelLabel(payload.modelLabel)
+                  }
                   setMessages((prev) =>
                     prev.map((m) =>
                       m.id === placeholderId ? {
@@ -667,6 +769,10 @@ export function useChat(): UseChatReturn {
             }
 
             const afterRunTags = applyRunTags(accumulated)
+
+            // Process memory tags: [MEMORY:add]content[/MEMORY] and [USER:add]content[/USER]
+            processMemoryTags(afterRunTags)
+
             const { text: finalContent, operations } = extractFileOps(afterRunTags)
             setMessages((prev) =>
               prev.map((m) =>
@@ -723,7 +829,8 @@ export function useChat(): UseChatReturn {
 
               // Stop agent loop conditions
               if (chatMode === 'autocode') {
-                if (operations.length === 0 && /\bcomplete\b|\bdone\b|\bfinished\b/i.test(accumulated)) {
+                // Only stop if AI explicitly signals task completion (not just "tests done" in a status report)
+                if (operations.length === 0 && /(?:task|everything|all\s+\w+\s+is)\s+(?:complete|done|finished)|^complete\.?$/im.test(accumulated)) {
                   agentLoopActiveRef.current = false
                 }
                 // Stop if AI response is empty or just whitespace
@@ -731,25 +838,25 @@ export function useChat(): UseChatReturn {
                   agentLoopActiveRef.current = false
                 }
                 // Nudge: if AI described intent but used no tool tags, remind it to act
-                if (operations.length === 0 && !accumulated.includes('[RUN]') && agentLoopActiveRef.current
+                if (operations.length === 0 && !accumulated.includes('[RUN]') && !accumulated.includes('[RUN:') && agentLoopActiveRef.current
                     && !/\bcomplete\b|\bdone\b|\bfinished\b/i.test(accumulated)
                     && accumulated.trim().length > 20) {
                   agentLoopIterationsRef.current++
                   if (agentLoopIterationsRef.current < MAX_AGENT_ITERATIONS) {
                     setTimeout(() => {
                       if (agentLoopActiveRef.current) {
-                        sendMessageInternal('You described what you would do but did not act. Use [READ:path] [EDIT:path] [RUN]command[/RUN] tags NOW. Do not describe — execute.')
+                        sendMessageInternal('STOP describing. ACT NOW. Use these exact tags:\n- [RUN:cargo test] to run commands\n- [READ:src/main.rs] to read files\n- [EDIT:path]content[/EDIT] to edit files\nDo NOT explain what you will do. Just do it.')
                       }
                     }, 300)
                   }
                 }
               }
 
-              // Autocode agent loop: only auto-continue if WRITE operations were performed
-              // READ-only responses don't need continuation — the AI already has context
-              const hasWriteOps = writeOps.length > 0
-              const hasRunOps = accumulated.includes('[RUN]')
-              if (chatMode === 'autocode' && agentLoopActiveRef.current && (hasWriteOps || hasRunOps)) {
+              // Autocode agent loop: continue if ANY operations were performed (read, write, or run)
+              const hasAnyOps = operations.length > 0
+              const hasRunOps = accumulated.includes('[RUN]') || accumulated.includes('[RUN:')
+              const hasPartialTag = /\[(?:READ|EDIT|RUN|FILE)(?::|\s*$)/m.test(accumulated)
+              if (chatMode === 'autocode' && agentLoopActiveRef.current && (hasAnyOps || hasRunOps || hasPartialTag)) {
                 agentLoopIterationsRef.current++
                 if (agentLoopIterationsRef.current < MAX_AGENT_ITERATIONS) {
                   // Brief delay then continue
@@ -757,12 +864,13 @@ export function useChat(): UseChatReturn {
                     if (agentLoopActiveRef.current) {
                       const readFiles = readOps.map(op => op.filePath).join(', ')
                       const editFiles = writeOps.map(op => op.filePath).join(', ')
-                      const context = [
+                      const parts = [
                         readFiles ? `Read: ${readFiles}` : '',
                         editFiles ? `Applied edits to: ${editFiles}` : '',
                       ].filter(Boolean).join('. ')
+                      const context = parts || 'Previous step processed'
                       // Send as hidden continuation (no user message bubble)
-                      sendMessageInternal(`${context}. Continue — what's the next step? If done, say "Complete."`)
+                      sendMessageInternal(`${context}. Continue — what's the next step? Use [RUN:command] [READ:path] [EDIT:path] tags. If done, say "Complete."`)
                     }
                   }, 500)
                 }

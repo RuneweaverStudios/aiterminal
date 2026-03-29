@@ -1,17 +1,35 @@
 # AITerminal Codebase Index
 
-**Last Updated:** 2026-03-25
+**Last Updated:** 2026-03-29
 **Project:** AITerminal - AI/Shell Hybrid Terminal
 **Stack:** Electron + React + TypeScript + Vite + Three.js
-**Total Files:** 125 TypeScript/TSX files
-**Total Lines:** ~26,500
+**Total Files:** 207 source files | **Total Lines:** ~33,500 | **Tests:** 1,086
 
 ## Quick Navigation
 
-- **[Frontend](frontend.md)** - React UI components, hooks, styles (48 files, 7,200 lines)
-- **[Backend](backend.md)** - Electron main process, IPC handlers (13 files, 2,470 lines)
-- **[Integrations](integrations.md)** - Ecosystem bridges (5 files, 177 lines)
-- **[Shared Utilities](shared-utilities.md)** - AI, shell, themes, types, agent-loop, vrm-models (45 files, 4,500 lines)
+- **[Frontend](frontend.md)** - React UI: App shell, 45 components, 25 hooks, 20 CSS files
+- **[Backend](backend.md)** - Electron main process, IPC handlers, PTY, services
+- **[Integrations](integrations.md)** - Ecosystem bridges (lossless, dietmcp, ferroclaw, kokoro)
+- **[Shared Utilities](shared-utilities.md)** - AI client, shell service, themes, types, agent-loop
+
+## New Modules (2026-03-29)
+
+| Module | Files | Purpose |
+|--------|-------|---------|
+| `renderer/parts/` | 5 | Typed message parts — PartRegistry, ToolRegistry, ContextGroup (OpenCode-inspired) |
+| `renderer/utils/markdown-*.ts` | 2 | Streaming markdown heal + block splitting |
+| `renderer/components/StreamingMarkdown.tsx` | 1 | Streaming-safe markdown renderer with code copy |
+| `renderer/components/TextShimmer.tsx` | 1 | Dual-layer thinking animation |
+| `renderer/components/ProcessBadge.tsx` | 1 | Color-coded 3-letter tool badges (Agent Zero-inspired) |
+| `renderer/components/BottomPanel.tsx` | 1 | VS Code-style bottom panel with tab switching |
+| `renderer/components/PanelTabBar.tsx` | 1 | VS Code-style panel tab bar |
+| `renderer/hooks/useBottomPanel.ts` | 1 | Bottom panel state (tab, height, persistence) |
+| `renderer/hooks/useAutoCollapse.ts` | 1 | Auto-collapse timer for tool results |
+| `renderer/hooks/usePacedValue.ts` | 1 | Adaptive typewriter throttle for streaming |
+| `renderer/hooks/useVirtualMessages.ts` | 1 | Lightweight message windowing |
+| `renderer/utils/accent-presets.ts` | 1 | 6 switchable accent color presets |
+| `renderer/utils/block-cache.ts` | 1 | LRU cache for rendered markdown blocks |
+| `renderer/components/icons/VSCodeIcons.tsx` | 1 | 17 VS Code codicon-style SVG icons |
 
 ## Project Overview
 
@@ -48,18 +66,39 @@ AITerminal is a next-generation terminal application that seamlessly integrates 
 ```
 aiterminal/
 ├── src/
-│   ├── main/           # Electron main process
-│   ├── renderer/       # React UI
-│   ├── ai/             # OpenRouter client
-│   ├── shell/          # NL detection and routing
-│   ├── themes/         # Terminal color schemes
-│   ├── file-tree/      # Directory traversal
-│   ├── integrations/   # Ecosystem bridges
-│   ├── types/          # Shared types
-│   └── test/           # Test utilities
-├── docs/
-│   ├── CODEMAPS/       # This directory
-│   └── ECOSYSTEM.md    # Integration docs
+│   ├── main/              # Electron main process (Node.js context)
+│   │   ├── main.ts           # App entry, BrowserWindow
+│   │   ├── ipc-handlers.ts   # IPC bridge (AI, file ops, PTY)
+│   │   ├── terminal-session-manager.ts  # Multi-session PTY
+│   │   └── workspace-policy.ts          # File access sandbox
+│   ├── renderer/          # React UI (Vite dev server)
+│   │   ├── App.tsx           # Root layout (~1300 lines)
+│   │   ├── components/       # 45 UI components
+│   │   │   ├── ClaudeCodeChat.tsx  # AI chat panel
+│   │   │   ├── BottomPanel.tsx     # VS Code bottom panel
+│   │   │   ├── StreamingMarkdown.tsx # Streaming markdown renderer
+│   │   │   └── icons/VSCodeIcons.tsx # Codicon-style icons
+│   │   ├── hooks/            # 25 React hooks
+│   │   │   ├── useChat.ts       # Chat state + agent loop (~950 lines)
+│   │   │   ├── useBottomPanel.ts # Bottom panel state
+│   │   │   └── useAgentLoop.ts   # Agent loop orchestration
+│   │   ├── parts/            # Message parts system (OpenCode-inspired)
+│   │   │   ├── parse-parts.ts    # Tag→typed parts parser
+│   │   │   ├── context-group.ts  # Auto-merge context tools
+│   │   │   └── part-registry.ts  # Pluggable part renderers
+│   │   ├── styles/           # 20 CSS files (glass morphism + accent vars)
+│   │   └── utils/            # Markdown heal, accent presets, block cache
+│   ├── ai/                # AI client layer
+│   │   ├── openrouter-client.ts  # Streaming + auto-escalation
+│   │   ├── models.ts             # 15 model definitions
+│   │   └── presets.ts            # 4 router presets
+│   ├── agent/             # Agent service (tag parsing)
+│   ├── agent-loop/        # Autonomous loop (Mei/Sora/Hana)
+│   ├── shell/             # NL detection + shell routing
+│   ├── themes/            # 5 themes + accent presets
+│   ├── types/             # Shared TypeScript interfaces
+│   └── integrations/      # Ecosystem bridges
+├── docs/CODEMAPS/         # This directory
 └── package.json
 ```
 
@@ -87,11 +126,20 @@ aiterminal/
 3. Renderer checks for error patterns
 4. Errors route to chat sidebar with context
 
-### AI Streaming
+### AI Streaming + Agent Loop
 1. Chat send → `ai-query-stream` IPC
 2. `OpenRouterClient.streamQuery()` yields chunks
-3. Main sends `ai-stream-chunk` events back to renderer
-4. `StreamingText` component renders incrementally
+3. Main sends `ai-stream-chunk` events → renderer
+4. `StreamingMarkdown` renders with markdown healing + code copy
+5. `applyRunTags()` extracts commands (4 formats: wrapper, colon, hybrid, bash block)
+6. `extractFileOps()` parses [READ/EDIT/FILE/DELETE] tags
+7. Agent loop: auto-continues after ops, nudges if AI describes instead of acting
+
+### Accent Theme System
+1. `accent-presets.ts` defines 6 presets (Teal, Purple, Blue, Green, Orange, Rose)
+2. `applyAccentPreset()` sets CSS custom properties on `:root`
+3. All UI accent colors use `var(--accent-color)` — instant theme switch
+4. Persisted to localStorage, loads on mount
 
 ## Development Workflow
 
@@ -142,8 +190,12 @@ See [Integrations Codemap](integrations.md) for details.
 
 | Metric | Value |
 |--------|-------|
-| Total Files | 125 |
-| Total Lines | ~26,500 |
-| Languages | TypeScript, TSX |
+| Total Files | 207 |
+| Total Lines | ~33,500 |
+| Test Files | 67 |
+| Tests | 1,086 |
+| Languages | TypeScript, TSX, CSS |
 | Framework | React + Electron + Three.js |
 | Test Coverage Target | 80%+ |
+| Accent Colors | 6 presets (Teal default) |
+| AI Models | 15 via OpenRouter |

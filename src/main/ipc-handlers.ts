@@ -926,4 +926,34 @@ export function setupAllHandlers(
     }
     return { success: true };
   });
+
+  // ═══════════════════════════════════════════════════════════════════════
+  //  Memory system (Hermes-style persistent agent memory)
+  // ═══════════════════════════════════════════════════════════════════════
+
+  ipc.handle('memory-read', (_event, file: string) => {
+    const { memoryRead } = require('./memory-store');
+    return memoryRead(file);
+  });
+
+  ipc.handle('memory-read-all', () => {
+    const { memoryReadAll } = require('./memory-store');
+    return memoryReadAll();
+  });
+
+  ipc.handle('memory-tool', (_event, args: {
+    action: string;
+    file: string;
+    content?: string;
+    oldText?: string;
+    newText?: string;
+  }) => {
+    const { memoryTool } = require('./memory-store');
+    return memoryTool(args.action, args.file, args.content, args.oldText, args.newText);
+  });
+
+  ipc.handle('memory-format-for-prompt', () => {
+    const { formatMemoryForPrompt } = require('./memory-store');
+    return formatMemoryForPrompt();
+  });
 }

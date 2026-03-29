@@ -304,6 +304,10 @@ const electronAPI: ElectronAPI = {
   updateInternSystemPrompt: (payload: string | null | { intern: string | null; cwd?: string }) =>
     ipcRenderer.invoke('update-intern-system-prompt', payload),
 
+  // --- Memory system (Hermes-style) ---
+  memoryTool: (args: { action: string; file: string; content?: string; oldText?: string; newText?: string }) =>
+    ipcRenderer.invoke('memory-tool', args),
+
   // --- Transcript search and retrieval ---
   transcriptSearch: (query: string, limit?: number) =>
     ipcRenderer.invoke('transcript:search', query, limit),

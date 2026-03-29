@@ -244,6 +244,20 @@ export interface ElectronAPI {
     error?: string;
   }>;
 
+  // --- Memory system (Hermes-style) ---
+  memoryTool: (args: {
+    action: string;
+    file: string;
+    content?: string;
+    oldText?: string;
+    newText?: string;
+  }) => Promise<{
+    success: boolean;
+    error?: string;
+    entries?: readonly string[];
+    usage?: { chars: number; limit: number; percent: number };
+  }>;
+
   // --- Transcript search and retrieval ---
   transcriptSearch: (query: string, limit?: number) => Promise<{
     success: boolean;

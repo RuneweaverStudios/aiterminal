@@ -22,6 +22,8 @@ export interface TerminalViewProps {
   readonly sessionId: string | null
   /** When false, terminal is hidden (another tab is active) — skip focus; refit when true again. */
   readonly isActive?: boolean
+  /** When true, a TUI app (e.g. Claude Code) owns the terminal — skip NL interception entirely. */
+  readonly tuiMode?: boolean
 }
 
 export interface TerminalViewRef {
@@ -36,6 +38,7 @@ export const TerminalView = forwardRef<TerminalViewRef, TerminalViewProps>((prop
     theme,
     sessionId,
     isActive = true,
+    tuiMode = false,
   } = props
   const containerRef = useRef<HTMLDivElement>(null)
   const terminalRef = useRef<Terminal | null>(null)
@@ -45,10 +48,12 @@ export const TerminalView = forwardRef<TerminalViewRef, TerminalViewProps>((prop
   const onPtyOutputRef = useRef(onPtyOutput)
   const sessionIdRef = useRef(sessionId)
   const isActiveRef = useRef(isActive)
+  const tuiModeRef = useRef(tuiMode)
   onCommandRef.current = onCommand
   onPtyOutputRef.current = onPtyOutput
   sessionIdRef.current = sessionId
   isActiveRef.current = isActive
+  tuiModeRef.current = tuiMode
 
   useEffect(() => {
     const container = containerRef.current
@@ -94,6 +99,20 @@ export const TerminalView = forwardRef<TerminalViewRef, TerminalViewProps>((prop
 
     // Keystrokes → PTY + command tracking
     const dataDisposable = terminal.onData((data: string) => {
+      // TUI mode: pass ALL keystrokes directly to PTY, skip NL interception entirely.
+      // A TUI app (Claude Code, vim, etc.) owns the terminal — we must not intercept.
+      if (tuiModeRef.current) {
+        inputBufferRef.current = ''
+        if (api) {
+          if (sessionIdRef.current) {
+            api.writeToSession(sessionIdRef.current, data)
+          } else {
+            api.writeToPty(data)
+          }
+        }
+        return
+      }
+
       let skipPtyWrite = false
 
       if (data === '\r' || data === '\n') {

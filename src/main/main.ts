@@ -303,6 +303,17 @@ app.whenReady().then(() => {
         }
       }
 
+      // Inject persistent memory (Hermes-style MEMORY.md + USER.md)
+      try {
+        const { formatMemoryForPrompt } = require('./memory-store');
+        const memoryBlock = formatMemoryForPrompt();
+        if (memoryBlock) {
+          basePrompt = memoryBlock + '\n\n' + basePrompt;
+        }
+      } catch {
+        // Memory store not available — continue without
+      }
+
       aiClient.setSystemPrompt(basePrompt);
       console.log('[main] Updated system prompt for intern:', activeIntern, cwd ? `(cwd: ${cwd})` : '');
       return { success: true };

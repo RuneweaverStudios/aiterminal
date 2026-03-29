@@ -84,7 +84,7 @@
 .cursor-snippet__cursor {
   display: inline-block;
   margin-left: 2px;
-  color: var(--ansi-blue, #bd93f9);
+  color: var(--accent-color, #14b8a6);
   font-weight: bold;
   animation: cursorBlink 1s step-end infinite;
   user-select: none;

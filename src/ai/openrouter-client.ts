@@ -64,6 +64,12 @@ function isComplexPrompt(prompt: string): boolean {
   if (/still.*fail|doesn't work|broke|crash|not working|tried everything/i.test(lower)) return true
   // Architecture questions
   if (/how should I.*structur|best approach|design pattern|system design/i.test(lower)) return true
+  // Agent loop continuation with errors — needs a stronger model
+  if (/error.*compil|compilation.*error|build.*fail|test.*fail/i.test(lower)) return true
+  // Agent loop continuation (multiple tool calls accumulated)
+  if (/Applied edits to:|Read:.*Continue/i.test(lower)) return true
+  // End-to-end testing (complex multi-step)
+  if (/end.to.end|e2e|comprehensive.*test|full.*test/i.test(lower)) return true
   // Long prompts (>500 chars) suggest complexity
   if (prompt.length > 500) return true
 
@@ -152,10 +158,49 @@ function buildMessages(
 // OpenRouterClient
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Provider routing (Hermes-style)
+// ---------------------------------------------------------------------------
+
+export interface ProviderRouting {
+  readonly sort?: 'price' | 'throughput' | 'latency'
+  readonly only?: readonly string[]
+  readonly ignore?: readonly string[]
+  readonly order?: readonly string[]
+  readonly require_parameters?: boolean
+  readonly data_collection?: 'allow' | 'deny'
+}
+
+function loadProviderRouting(): ProviderRouting | undefined {
+  try {
+    const fs = require('fs')
+    const path = require('path')
+    const os = require('os')
+    const configPath = path.join(os.homedir(), '.aiterminal', 'provider-routing.json')
+    if (fs.existsSync(configPath)) {
+      const raw = fs.readFileSync(configPath, 'utf-8')
+      return JSON.parse(raw) as ProviderRouting
+    }
+  } catch {
+    // No routing config — use defaults
+  }
+
+  // Also check env var
+  const envRouting = process.env.AITERMINAL_PROVIDER_ROUTING
+  if (envRouting) {
+    try {
+      return JSON.parse(envRouting) as ProviderRouting
+    } catch { /* ignore */ }
+  }
+
+  return undefined
+}
+
 export class OpenRouterClient implements IAIClient {
   private readonly openai: OpenAI;
   private systemPrompt: string;
   private activePresetName: string;
+  private readonly providerRouting: ProviderRouting | undefined;
 
   constructor(config: AIServiceConfig) {
     if (!config.apiKey) {
@@ -175,9 +220,20 @@ export class OpenRouterClient implements IAIClient {
 
     this.systemPrompt = config.systemPrompt;
     this.activePresetName = config.activePreset;
+    this.providerRouting = loadProviderRouting();
+
+    if (this.providerRouting) {
+      console.log('[OpenRouterClient] Provider routing loaded:', this.providerRouting);
+    }
 
     // Validate that the preset exists at construction time.
     getPreset(this.activePresetName);
+  }
+
+  /** Build extra body params for provider routing */
+  private getProviderBody(): Record<string, unknown> {
+    if (!this.providerRouting) return {};
+    return { provider: { ...this.providerRouting } };
   }
 
   // -------------------------------------------------------------------------
@@ -239,7 +295,8 @@ export class OpenRouterClient implements IAIClient {
         model: modelId,
         messages: [...messages],
         max_tokens: request.maxTokens ?? DEFAULT_MAX_TOKENS,
-      });
+        ...this.getProviderBody(),
+      } as any);
 
       const latencyMs = Date.now() - startMs;
       const content = completion.choices[0]?.message?.content ?? '';
@@ -280,11 +337,12 @@ export class OpenRouterClient implements IAIClient {
     // Once streaming begins, yield chunks in real-time for responsive UX.
     for (let attempt = 0; attempt <= RETRY_DELAYS_MS.length; attempt++) {
       try {
-        const stream = await this.openai.chat.completions.create({
+        const stream = await (this.openai.chat.completions.create as Function)({
           model: modelId,
           messages: [...messages],
           max_tokens: request.maxTokens ?? DEFAULT_MAX_TOKENS,
           stream: true,
+          ...this.getProviderBody(),
         });
 
         // Connection succeeded — stream in real-time (no more retries possible)

@@ -52,7 +52,7 @@
   padding: 1px 6px;
   border-radius: 8px;
   background: rgba(189, 147, 249, 0.15);
-  color: var(--ansi-blue, #bd93f9);
+  color: var(--accent-color, #14b8a6);
   font-weight: 500;
   text-transform: lowercase;
   flex-shrink: 0;
@@ -167,7 +167,7 @@
   width: 14px;
   height: 14px;
   border: 2px solid rgba(255, 255, 255, 0.1);
-  border-top-color: var(--ansi-blue, #bd93f9);
+  border-top-color: var(--accent-color, #14b8a6);
   border-radius: 50%;
   animation: file-preview-spin 600ms linear infinite;
 }
@@ -190,7 +190,7 @@
 /* ===== Syntax token classes ===== */
 
 .token-keyword {
-  color: var(--ansi-blue, #bd93f9);
+  color: var(--accent-color, #14b8a6);
 }
 
 .token-string {

@@ -1,12 +1,15 @@
 import React, { useState, useRef, useEffect } from 'react';
-import ReactMarkdown from 'react-markdown';
 import { InlineFileOpsApproval } from './InlineFileOpsApproval';
-import { ToolCallDisplay } from './ToolCallDisplay';
+import { ProcessBadge } from './ProcessBadge';
+import { TextShimmer } from './TextShimmer';
+import { StreamingMarkdown } from './StreamingMarkdown';
 import { ChatErrorBoundary } from './ChatErrorBoundary';
-import { parseMessageIntoParts } from '../../types/message-parts';
+import { parseIntoParts } from '../parts/parse-parts';
+import { groupContextParts } from '../parts/context-group';
 import type { FileOperation } from '../../types/agent';
 import type { ChatMode } from '../../types/chat';
 import '../styles/components.css';
+import '../styles/streaming-markdown.css';
 
 interface ClaudeCodeChatProps {
   messages: Array<{ role: 'user' | 'assistant'; content: string }>;
@@ -64,7 +67,6 @@ export const ClaudeCodeChat: React.FC<ClaudeCodeChatProps> = ({
   isStreaming = false,
 }) => {
   const [input, setInput] = useState('');
-  const [isMultiline, setIsMultiline] = useState(false);
   const [showToolDetails, setShowToolDetails] = useState(true);
   const [elapsedSec, setElapsedSec] = useState(0);
 
@@ -133,22 +135,14 @@ export const ClaudeCodeChat: React.FC<ClaudeCodeChatProps> = ({
     }
   }, [messages]);
 
-  // Focus textarea on mount and when backend changes to claude-code
+  // Clear local messages when switching away from Claude Code mode
   useEffect(() => {
-    if (backend === 'claude-code' && textareaRef.current) {
-      // Small delay to ensure the chat is rendered
-      setTimeout(() => {
-        textareaRef.current?.focus();
-      }, 100);
-    }
-    // Clear local messages when switching away from Claude Code mode
     if (backend === 'openrouter') {
       setLocalMessages([]);
     }
   }, [backend]);
-  useEffect(() => {
-    textareaRef.current?.focus();
-  }, []);
+  // NOTE: Removed auto-focus on mount — it was stealing focus from the terminal.
+  // The textarea gains focus naturally when the user clicks in the chat area.
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     // Shift+Tab: cycle chat mode
@@ -164,11 +158,16 @@ export const ClaudeCodeChat: React.FC<ClaudeCodeChatProps> = ({
       return;
     }
 
-    if (e.key === 'Enter' && !e.shiftKey && !isMultiline) {
+    if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       const messageText = input.trim();
       if (messageText) {
         setInput('');
+        // Reset textarea height after send
+        if (textareaRef.current) {
+          textareaRef.current.style.height = 'auto';
+          textareaRef.current.style.overflowY = 'hidden';
+        }
         if (backend === 'claude-code' && writeToClaudeCode) {
           clearClaudeCodeStream?.();
           writeToClaudeCode(messageText);
@@ -190,15 +189,26 @@ export const ClaudeCodeChat: React.FC<ClaudeCodeChatProps> = ({
 
   const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const newValue = e.target.value;
-    // Input tracking — no console logging
     setInput(newValue);
+    autoResizeTextarea(e.target);
+  }
 
-    // Auto-expand for multiline if shift+enter was used
-    const lines = newValue.split('\n');
-    if (lines.length > 1) {
-      setIsMultiline(true);
-    } else if (lines.length === 1 && newValue.slice(-1) !== '\n') {
-      setIsMultiline(false);
+  // Auto-resize textarea to fit content (up to max height, then scroll)
+  const autoResizeTextarea = (el: HTMLTextAreaElement) => {
+    el.style.height = 'auto';
+    const maxH = 120; // ~5 lines
+    const scrollH = el.scrollHeight;
+    el.style.height = `${Math.min(scrollH, maxH)}px`;
+    el.style.overflowY = scrollH > maxH ? 'auto' : 'hidden';
+  }
+
+  // Fallback for voice dictation tools (Wispr Flow, macOS Dictation) that inject
+  // text via InputEvent/insertText without triggering React's onChange
+  const handleInput = (e: React.FormEvent<HTMLTextAreaElement>) => {
+    const target = e.target as HTMLTextAreaElement
+    if (target.value !== input) {
+      setInput(target.value)
+      autoResizeTextarea(target)
     }
   }
 
@@ -209,7 +219,7 @@ export const ClaudeCodeChat: React.FC<ClaudeCodeChatProps> = ({
   }
 
   const backendColors = {
-    'openrouter': '#bd93f9',
+    'openrouter': 'var(--accent-color, #14b8a6)',
     'claude-code': '#ff6b6b'
   }
 
@@ -290,7 +300,17 @@ export const ClaudeCodeChat: React.FC<ClaudeCodeChatProps> = ({
             </div>
           </div>
         )}
-        {(backend === 'claude-code' ? localMessages : messages).map((msg, idx) => (
+        {(backend === 'claude-code' ? localMessages : messages).map((msg, idx) => {
+          // Skip rendering assistant messages that are only tool tags (empty after stripping)
+          if (msg.role === 'assistant' && msg.content) {
+            const stripped = msg.content
+              .replace(/\[(?:RUN|READ|FILE|EDIT|DELETE)(?::[^\]]*)?(?:\]|$)/g, '')
+              .replace(/\[\/(?:RUN|READ|FILE|EDIT|DELETE)\]?/g, '')
+              .replace(/<tool_call>[^\n]*/g, '')
+              .trim()
+            if (stripped.length === 0) return null
+          }
+          return (
           <div
             key={'id' in msg ? (msg as { id: string }).id : `msg-${idx}`}
             style={{
@@ -302,7 +322,7 @@ export const ClaudeCodeChat: React.FC<ClaudeCodeChatProps> = ({
               <div style={styles.messageMeta}>
                 <span style={styles.aiName}>{activeIntern ? activeIntern.toUpperCase() : 'MEI'}</span>
                 <span style={styles.aiModel}>•</span>
-                <span style={styles.aiModel}>{presetLabel || modelLabel || 'Unknown'}</span>
+                <span style={styles.aiModel}>{(msg as { model?: string }).model || modelLabel || presetLabel || 'Unknown'}</span>
                 {(msg as { tokens?: { total?: number } }).tokens?.total ? (
                   <>
                     <span style={styles.aiModel}>•</span>
@@ -331,55 +351,78 @@ export const ClaudeCodeChat: React.FC<ClaudeCodeChatProps> = ({
                 <ChatErrorBoundary>
                 {(() => {
                   if (msg.role === 'assistant') {
-                    // Parse into typed parts for structured rendering
-                    const parts = parseMessageIntoParts(msg.content);
+                    // Parse into typed parts using the new parts system
+                    const rawParts = parseIntoParts(msg.content);
+                    // Group consecutive context-gathering tools (read/grep/glob)
+                    const parts = groupContextParts(rawParts);
                     const hasToolParts = parts.some(p => p.type !== 'text');
+                    const isLastMsg = idx === (backend === 'claude-code' ? localMessages : messages).length - 1;
 
                     return (
                       <>
                         {parts.map((part, pi) => {
                           if (part.type === 'text') {
                             return (
-                              <div key={pi} style={styles.markdownWrapper}>
-                                <ReactMarkdown components={mdComponents}>
-                                  {part.content}
-                                </ReactMarkdown>
+                              <StreamingMarkdown
+                                key={pi}
+                                content={(part as unknown as { content: string }).content}
+                                isStreaming={isLastMsg && isStreaming}
+                              />
+                            );
+                          }
+                          if (part.type === 'context-group') {
+                            if (!showToolDetails) return null;
+                            const group = part as unknown as { tools: readonly { tool: string; path?: string }[]; summary: string };
+                            return (
+                              <div key={pi} style={{
+                                margin: '4px 0',
+                                padding: '4px 8px',
+                                background: 'rgba(255,255,255,0.03)',
+                                borderLeft: '2px solid rgba(56, 189, 248, 0.3)',
+                                borderRadius: '0 4px 4px 0',
+                                fontSize: '11px',
+                                color: 'rgba(255,255,255,0.5)',
+                              }}>
+                                <ProcessBadge type="read" />
+                                <span style={{ marginLeft: '8px' }}>{group.summary}</span>
                               </div>
                             );
                           }
                           if (!showToolDetails && hasToolParts) return null;
                           if (part.type === 'tool') {
+                            const toolPart = part as unknown as { tool: string; path?: string; command?: string; status: string; error?: string; output?: string };
+                            const label = toolPart.command || toolPart.path || toolPart.tool;
+                            const statusIcon = toolPart.status === 'done' ? '✓' : toolPart.status === 'error' ? '✗' : toolPart.status === 'running' ? '◐' : '◌';
+                            const statusColor = toolPart.status === 'done' ? '#10b981' : toolPart.status === 'error' ? '#ef4444' : '#f59e0b';
                             return (
-                              <ToolCallDisplay
-                                key={pi}
-                                type={part.tool}
-                                path={part.path}
-                                summary={part.command || part.summary}
-                                status={part.status}
-                                errorMsg={part.error}
-                              />
+                              <div key={pi} style={{
+                                display: 'flex', alignItems: 'center', gap: '6px',
+                                margin: '2px 0', padding: '3px 8px',
+                                background: 'rgba(255,255,255,0.02)',
+                                borderLeft: `2px solid ${statusColor}`,
+                                borderRadius: '0 4px 4px 0',
+                                fontSize: '12px', fontFamily: 'monospace',
+                              }}>
+                                <ProcessBadge type={toolPart.tool} />
+                                <code style={{ color: 'rgba(255,255,255,0.7)', flex: 1 }}>{label}</code>
+                                <span style={{ color: statusColor, fontSize: '11px', fontWeight: 700 }}>{statusIcon}</span>
+                              </div>
                             );
                           }
-                          if (part.type === 'file') {
+                          if (part.type === 'reasoning') {
                             return (
-                              <ToolCallDisplay
-                                key={pi}
-                                type="read"
-                                path={part.path}
-                                summary={`${part.lines} lines, ${Math.round(part.size / 1024)}KB`}
-                                status="done"
-                              />
-                            );
-                          }
-                          if (part.type === 'diff') {
-                            return (
-                              <ToolCallDisplay
-                                key={pi}
-                                type="edit"
-                                path={part.path}
-                                status="done"
-                                diff={{ removed: [...part.removed], added: [...part.added] }}
-                              />
+                              <div key={pi} style={{
+                                margin: '4px 0',
+                                padding: '6px 10px',
+                                background: 'rgba(99, 102, 241, 0.08)',
+                                borderLeft: '2px solid rgba(99, 102, 241, 0.3)',
+                                borderRadius: '0 4px 4px 0',
+                                fontSize: '12px',
+                                color: 'rgba(255,255,255,0.45)',
+                                fontStyle: 'italic',
+                              }}>
+                                {(part as unknown as { content: string }).content}
+                              </div>
                             );
                           }
                           return null;
@@ -388,18 +431,17 @@ export const ClaudeCodeChat: React.FC<ClaudeCodeChatProps> = ({
                     );
                   }
                   return (
-                    <div style={styles.markdownWrapper}>
-                      <ReactMarkdown components={mdComponents}>
-                        {msg.content}
-                      </ReactMarkdown>
-                    </div>
+                    <StreamingMarkdown
+                      content={msg.content}
+                      isStreaming={false}
+                    />
                   );
                 })()}
                 </ChatErrorBoundary>
               </div>
             </div>
           </div>
-        ))}
+        )})}
         {backend === 'claude-code' && claudeCodeStream && (
           <div style={{...styles.message, ...styles.messageRight}}>
             <div style={styles.messageMeta}>
@@ -409,26 +451,22 @@ export const ClaudeCodeChat: React.FC<ClaudeCodeChatProps> = ({
             </div>
             <div style={styles.messageBubble}>
               <div style={styles.messageContent}>
-                <div style={styles.markdownWrapper}>
-                  <ReactMarkdown
-                    components={mdComponents}
-                  >
-                    {claudeCodeStream}
-                  </ReactMarkdown>
-                </div>
+                <StreamingMarkdown
+                  content={claudeCodeStream}
+                  isStreaming={true}
+                />
               </div>
             </div>
           </div>
         )}
-        {/* Thinking indicator with timer */}
+        {/* Thinking indicator with shimmer + timer */}
         {isStreaming && (
           <div style={{
             display: 'flex', alignItems: 'center', gap: '8px',
-            padding: '8px 0', fontSize: '12px', color: 'rgba(255,255,255,0.4)',
+            padding: '8px 0', fontSize: '12px',
           }}>
-            <span style={{ animation: 'spin 1s linear infinite', display: 'inline-block' }}>◐</span>
-            <span>Thinking...</span>
-            <span style={{ fontFamily: 'monospace', fontSize: '10px', opacity: 0.5 }}>
+            <TextShimmer text="Thinking..." active={true} />
+            <span style={{ fontFamily: 'monospace', fontSize: '10px', opacity: 0.3 }}>
               {elapsedSec}s
             </span>
           </div>
@@ -444,100 +482,131 @@ export const ClaudeCodeChat: React.FC<ClaudeCodeChatProps> = ({
         <div ref={messagesEndRef} />
       </div>
 
-      {/* Input Line */}
-      <div style={styles.inputContainer}>
-        <span style={{
-          ...styles.prompt,
-          ...(isWaitingForPermissions ? { opacity: 0.3 } : {})
-        }}>▶</span>
-        {isAgentLooping && onStopAgentLoop && (
-          <button
-            onClick={onStopAgentLoop}
+      {/* Input Area — OpenCode / Cursor style */}
+      <div style={styles.inputOuter}>
+        <div style={styles.inputCard}>
+          {/* Textarea */}
+          <textarea
+            ref={textareaRef}
+            value={input}
+            onChange={handleChange}
+            onInput={handleInput}
+            onKeyDown={handleKeyDown}
+            placeholder={getPlaceholder()}
+            disabled={isWaitingForPermissions}
             style={{
-              padding: '2px 8px',
-              borderRadius: '4px',
-              border: '1px solid rgba(255, 50, 50, 0.5)',
-              background: 'rgba(255, 50, 50, 0.15)',
-              color: '#ff5555',
-              fontSize: '10px',
-              fontWeight: 700,
-              cursor: 'pointer',
-              letterSpacing: '0.05em',
-              marginRight: '4px',
+              ...styles.textarea,
+              ...(isWaitingForPermissions ? { opacity: 0.5, cursor: 'wait' } : {})
             }}
-            title="Stop agent loop"
-          >
-            STOP
-          </button>
-        )}
-        {chatMode !== 'normal' && (
-          <button
-            onClick={onCycleChatMode}
-            style={{
-              ...modeIndicatorStyles.base,
-              ...(chatMode === 'plan' ? modeIndicatorStyles.plan : modeIndicatorStyles.autocode),
-            }}
-            title="Shift+Tab to cycle modes"
-          >
-            {chatMode === 'plan' ? 'PLAN' : 'YOLO'}
-          </button>
-        )}
-        <textarea
-          ref={textareaRef}
-          value={input}
-          onChange={handleChange}
-          onKeyDown={handleKeyDown}
-          placeholder={getPlaceholder()}
-          disabled={isWaitingForPermissions}
-          style={{
-            ...styles.textarea,
-            ...(isMultiline ? styles.textareaMultiline : {}),
-            ...(isWaitingForPermissions ? { opacity: 0.5, cursor: 'wait' } : {})
-          }}
-          rows={isMultiline ? undefined : 1}
-        />
-        {isWaitingForPermissions && (
-          <div style={{
-            position: 'absolute',
-            right: '20px',
-            bottom: '20px',
-            fontSize: '12px',
-            color: '#ff6b6b',
-            background: 'rgba(255, 107, 107, 0.1)',
-            padding: '4px 8px',
-            borderRadius: '4px',
-            border: '1px solid rgba(255, 107, 107, 0.3)'
-          }}>
-            Accepting permissions...
+          />
+          {/* Controls row inside card */}
+          <div style={styles.inputControls}>
+            <div style={styles.inputControlsLeft}>
+              {chatMode !== 'normal' ? (
+                <button
+                  onClick={onCycleChatMode}
+                  style={{
+                    ...modeIndicatorStyles.base,
+                    ...(chatMode === 'plan' ? modeIndicatorStyles.plan : modeIndicatorStyles.autocode),
+                  }}
+                  title="Shift+Tab to cycle modes"
+                >
+                  {chatMode === 'plan' ? '⊞ Plan' : '⚡ YOLO'}
+                </button>
+              ) : (
+                <button
+                  onClick={onCycleChatMode}
+                  style={modeIndicatorStyles.normal}
+                  title="Shift+Tab to cycle modes"
+                >
+                  Normal
+                </button>
+              )}
+              <span style={styles.inputModelLabel}>
+                {modelLabel || presetLabel || 'Auto'}
+              </span>
+              {isWaitingForPermissions && (
+                <span style={styles.permissionsLabel}>Accepting permissions...</span>
+              )}
+            </div>
+            <div style={styles.inputControlsRight}>
+              {isAgentLooping && onStopAgentLoop && (
+                <button
+                  onClick={onStopAgentLoop}
+                  style={styles.stopButton}
+                  title="Stop agent loop"
+                >
+                  ■
+                </button>
+              )}
+              <button
+                onClick={() => {
+                  const msg = input.trim();
+                  if (!msg) return;
+                  setInput('');
+                  if (textareaRef.current) {
+                    textareaRef.current.style.height = 'auto';
+                    textareaRef.current.style.overflowY = 'hidden';
+                  }
+                  if (backend === 'claude-code' && writeToClaudeCode) {
+                    clearClaudeCodeStream?.();
+                    writeToClaudeCode(msg);
+                    setLocalMessages(prev => [...prev, { role: 'user', content: msg }]);
+                  } else {
+                    Promise.resolve(onSendMessage(msg)).catch(console.error);
+                  }
+                }}
+                style={styles.sendButton}
+                title="Send (Enter)"
+                disabled={!input.trim()}
+              >
+                ↑
+              </button>
+            </div>
           </div>
-        )}
+        </div>
       </div>
     </div>
   );
 };
 
 // Mode indicator styles
-const modeIndicatorStyles = {
+const modeIndicatorStyles: Record<string, React.CSSProperties> = {
   base: {
-    padding: '2px 8px',
-    borderRadius: '4px',
-    fontSize: '10px',
-    fontWeight: 700 as const,
-    letterSpacing: '0.08em',
+    padding: '3px 10px',
+    borderRadius: '12px',
+    fontSize: '11px',
+    fontWeight: 600,
+    letterSpacing: '0.02em',
     border: 'none',
     cursor: 'pointer',
     flexShrink: 0,
-    lineHeight: '16px',
+    lineHeight: '18px',
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: '4px',
+  },
+  normal: {
+    padding: '3px 10px',
+    borderRadius: '12px',
+    fontSize: '11px',
+    fontWeight: 500,
+    border: 'none',
+    cursor: 'pointer',
+    flexShrink: 0,
+    lineHeight: '18px',
+    background: 'rgba(255, 255, 255, 0.06)',
+    color: 'rgba(255, 255, 255, 0.4)',
   },
   plan: {
-    background: 'rgba(107, 157, 255, 0.2)',
+    background: 'rgba(107, 157, 255, 0.15)',
     color: '#6b9dff',
-    border: '1px solid rgba(107, 157, 255, 0.3)',
+    border: '1px solid rgba(107, 157, 255, 0.25)',
   },
   autocode: {
-    background: 'rgba(255, 149, 0, 0.2)',
+    background: 'rgba(255, 149, 0, 0.15)',
     color: '#ff9500',
-    border: '1px solid rgba(255, 149, 0, 0.3)',
+    border: '1px solid rgba(255, 149, 0, 0.25)',
   },
 };
 
@@ -547,6 +616,7 @@ const styles: Record<string, React.CSSProperties> = {
     display: 'flex',
     flexDirection: 'column',
     height: '100%',
+    overflow: 'hidden',
     fontFamily: '-apple-system, BlinkMacSystemFont, "SF Mono", "Monaco", "Inconsolata", "Fira Code", monospace',
     color: '#e0e0e0',
     fontSize: '14px',
@@ -575,7 +645,7 @@ const styles: Record<string, React.CSSProperties> = {
     opacity: 0.9,
     letterSpacing: '0.02em',
     textTransform: 'uppercase',
-    color: '#bd93f9',
+    color: 'var(--accent-color, #14b8a6)',
   },
 
   backendBadge: {
@@ -634,7 +704,7 @@ const styles: Record<string, React.CSSProperties> = {
 
   aiName: {
     fontWeight: 700,
-    color: '#bd93f9',
+    color: 'var(--accent-color, #14b8a6)',
     letterSpacing: '0.05em',
   },
 
@@ -662,6 +732,8 @@ const styles: Record<string, React.CSSProperties> = {
 
   messageContent: {
     flex: 1,
+    minWidth: 0,
+    overflow: 'hidden',
     fontSize: '14px',
     lineHeight: '1.5',
   },
@@ -701,46 +773,99 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: '13px',
   },
 
-  inputContainer: {
-    display: 'flex',
-    alignItems: 'flex-end',
-    padding: '16px 20px',
-    backdropFilter: 'blur(10px)',
+  inputOuter: {
+    padding: '12px 16px 14px',
     backgroundColor: 'rgba(20, 22, 30, 0.95)',
-    borderTop: '1px solid rgba(255, 255, 255, 0.08)',
-    gap: '12px',
+    borderTop: '1px solid rgba(255, 255, 255, 0.06)',
     flexShrink: 0,
   },
 
-  prompt: {
-    fontWeight: 'bold',
-    opacity: 0.8,
-    userSelect: 'none' as const,
-    fontSize: '18px',
+  inputCard: {
+    border: '1px solid rgba(255, 255, 255, 0.12)',
+    borderRadius: '10px',
+    backgroundColor: 'rgba(255, 255, 255, 0.03)',
+    overflow: 'hidden',
+    transition: 'border-color 0.15s ease',
+  },
+
+  inputControls: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: '6px 10px 8px',
+  },
+
+  inputControlsLeft: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+  },
+
+  inputControlsRight: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '6px',
+  },
+
+  inputModelLabel: {
+    fontSize: '11px',
+    color: 'rgba(255, 255, 255, 0.3)',
+    fontWeight: 500,
+  },
+
+  stopButton: {
+    width: '26px',
+    height: '26px',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: '6px',
+    border: '1px solid rgba(255, 50, 50, 0.4)',
+    background: 'rgba(255, 50, 50, 0.12)',
+    color: '#ff5555',
+    fontSize: '12px',
+    cursor: 'pointer',
     flexShrink: 0,
-    paddingBottom: '2px',
-    color: '#bd93f9',
+  },
+
+  sendButton: {
+    width: '26px',
+    height: '26px',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: '6px',
+    border: '1px solid rgba(255, 255, 255, 0.15)',
+    background: 'rgba(255, 255, 255, 0.06)',
+    color: 'rgba(255, 255, 255, 0.5)',
+    fontSize: '14px',
+    fontWeight: 700 as const,
+    cursor: 'pointer',
+    flexShrink: 0,
+    transition: 'all 0.15s ease',
+  },
+
+  permissionsLabel: {
+    fontSize: '10px',
+    color: '#ff6b6b',
+    opacity: 0.7,
   },
 
   textarea: {
-    flex: 1,
+    width: '100%',
     background: 'transparent',
     border: 'none',
     outline: 'none',
     color: '#e0e0e0',
     fontFamily: '-apple-system, BlinkMacSystemFont, "SF Mono", "Monaco", "Inconsolata", "Fira Code", monospace',
-    fontSize: '14px',
+    fontSize: '13px',
     lineHeight: '1.5',
     resize: 'none' as const,
-    overflow: 'hidden',
-    padding: '0',
-    minHeight: '24px',
-    maxHeight: '150px',
-  },
-
-  textareaMultiline: {
-    overflow: 'auto' as const,
-    minHeight: '48px',
+    overflow: 'hidden' as const,
+    padding: '12px 12px 4px',
+    minHeight: '36px',
+    maxHeight: '120px',
+    boxSizing: 'border-box' as const,
   },
 
   cursor: {
@@ -786,23 +911,6 @@ const styles: Record<string, React.CSSProperties> = {
     fontFamily: 'monospace',
     marginTop: '8px',
   },
-};
-
-// Shared markdown components (DRY — single definition for all renderers)
-const mdComponents = {
-  code: ({children, className}: any) => {
-    const isBlock = className?.includes('language-');
-    return (
-      <code style={isBlock ? styles.markdownCodeBlock : styles.markdownInlineCode}>
-        {children}
-      </code>
-    );
-  },
-  p: ({children}: any) => <p style={styles.markdownParagraph}>{children}</p>,
-  ul: ({children}: any) => <ul style={{margin: '0 0 8px 0', paddingLeft: '16px'}}>{children}</ul>,
-  ol: ({children}: any) => <ol style={{margin: '0 0 8px 0', paddingLeft: '16px'}}>{children}</ol>,
-  li: ({children}: any) => <li style={{marginBottom: '2px'}}>{children}</li>,
-  strong: ({children}: any) => <strong style={{fontWeight: 600}}>{children}</strong>,
 };
 
 // Keyframe injection moved into component useEffect to avoid module-level DOM mutation

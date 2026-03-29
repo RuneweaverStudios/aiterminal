@@ -230,7 +230,7 @@
   font-weight: 700;
   letter-spacing: 0.04em;
   text-transform: uppercase;
-  background: var(--accent-gradient, linear-gradient(135deg, #bd93f9, #ff79c6));
+  background: var(--accent-gradient, var(--accent-gradient));
   color: #fff;
   margin-bottom: 6px;
 }
@@ -292,7 +292,7 @@
   width: 5px;
   height: 5px;
   border-radius: 50%;
-  background: var(--ansi-blue, #bd93f9);
+  background: var(--accent-color, #14b8a6);
   animation: pulseDot 1.4s ease-in-out infinite;
 }
 
@@ -381,7 +381,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: var(--accent-gradient, linear-gradient(135deg, #bd93f9, #ff79c6));
+  background: var(--accent-gradient, var(--accent-gradient));
   border: none;
   border-radius: 50%;
   color: #fff;

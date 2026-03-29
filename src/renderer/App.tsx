@@ -61,6 +61,18 @@ import {
   shouldAutoEnableTuiFromPtyOutput,
 } from '@/shell/shell-service'
 
+// Icons + accent
+import { IconSidebarLeft, IconChat, IconPalette, IconPanel } from '@/renderer/components/icons/VSCodeIcons'
+import { BottomPanel } from '@/renderer/components/BottomPanel'
+import { useBottomPanel } from '@/renderer/hooks/useBottomPanel'
+import {
+  ACCENT_PRESETS,
+  getStoredAccentId,
+  storeAccentId,
+  getAccentPreset,
+  applyAccentPreset,
+} from '@/renderer/utils/accent-presets'
+
 // ---------------------------------------------------------------------------
 // Pure helpers
 // ---------------------------------------------------------------------------
@@ -78,6 +90,21 @@ export const App: FC = () => {
   // -------------------------------------------------------------------------
 
   const { activeTheme } = useTheme()
+
+  // Accent color preset — switchable UI accent independent of terminal theme
+  const [accentId, setAccentId] = useState(getStoredAccentId)
+  useEffect(() => {
+    applyAccentPreset(getAccentPreset(accentId))
+  }, [accentId])
+  const cycleAccent = useCallback(() => {
+    setAccentId(prev => {
+      const idx = ACCENT_PRESETS.findIndex(p => p.id === prev)
+      const next = ACCENT_PRESETS[(idx + 1) % ACCENT_PRESETS.length]
+      storeAccentId(next.id)
+      return next.id
+    })
+  }, [])
+
   const cmdK = useCmdK()
   const chat = useChat()
   const autocomplete = useAutocomplete()
@@ -86,6 +113,7 @@ export const App: FC = () => {
   const agentLoop = useAgentLoop({ enabled: false })  // Start disabled
   const terminalTabs = useTerminalTabs()
   const terminalLocation = useTerminalLocation()
+  const bottomPanel = useBottomPanel()
   const backendSelector = useBackendSelector()
   const resizablePanels = useResizablePanels({
     storageKey: 'aiterminal-layout',
@@ -454,6 +482,10 @@ export const App: FC = () => {
       setTuiMode(true)
     }
 
+    // Skip error routing and cd detection when TUI mode is active —
+    // a TUI app (Claude Code, vim, etc.) handles its own errors and cwd
+    if (tuiModeRef.current) return
+
     const errorPatterns = [
       /command not found/i,
       /No such file or directory/i,
@@ -517,10 +549,10 @@ export const App: FC = () => {
         return
       }
 
-      // Cmd+B — toggle Chat sidebar
+      // Cmd+B — toggle Chat (opens CLAUDE tab in bottom panel)
       if (isMeta && e.key === 'b') {
         e.preventDefault()
-        chat.toggle()
+        bottomPanel.toggleTab('claude')
         return
       }
 
@@ -531,10 +563,17 @@ export const App: FC = () => {
         return
       }
 
-      // Cmd+Opt+T — Toggle terminal location
+      // Cmd+J — Toggle bottom panel (VS Code standard)
+      if (isMeta && e.key === 'j') {
+        e.preventDefault()
+        bottomPanel.toggleTab('terminal')
+        return
+      }
+
+      // Cmd+Opt+T — Toggle terminal location (legacy)
       if (isMeta && e.altKey && e.key === 't') {
         e.preventDefault()
-        terminalLocation.toggle()
+        bottomPanel.toggleTab('terminal')
         return
       }
 
@@ -852,36 +891,40 @@ export const App: FC = () => {
           />
           <button
             type="button"
-            className="titlebar__toggle"
+            className={`titlebar__toggle ${fileTree.isVisible ? 'titlebar__toggle--active' : ''}`}
             onClick={fileTree.toggleVisible}
             title={fileTree.isVisible ? "Hide Sidebar (Cmd+Shift+F)" : "Show Sidebar (Cmd+Shift+F)"}
             aria-label="Toggle sidebar"
           >
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-              <path d="M1 3h5v1H1V3zm6 0h5v1H7V3zm1 2h3v1H8V5zm-7 2h5v1H1V7zm6 0h5v1H7V7zm1 2h3v1H8V9zm-7 2h5v1H1v-1zm6 0h5v1H7v-1zm1 2h3v1H8v-1z"/>
-            </svg>
+            <IconSidebarLeft size={16} />
           </button>
           <button
             type="button"
-            className="titlebar__toggle"
+            className={`titlebar__toggle ${chat.state.isOpen ? 'titlebar__toggle--active' : ''}`}
             onClick={chat.toggle}
             title={chat.state.isOpen ? "Hide Chat (Cmd+B)" : "Show Chat (Cmd+B)"}
             aria-label="Toggle chat"
           >
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-              <path d="M1 3h14v1H1V3zm0 3h14v1H1V6zm0 3h10v1H1V9zm0 3h10v1H1v-1z"/>
-            </svg>
+            <IconChat size={16} />
+          </button>
+          <button
+            type="button"
+            className={`titlebar__toggle ${bottomPanel.state.isOpen ? 'titlebar__toggle--active' : ''}`}
+            onClick={() => bottomPanel.toggleTab('terminal')}
+            title="Toggle bottom panel (Cmd+J)"
+            aria-label="Toggle bottom panel"
+          >
+            <IconPanel size={16} />
           </button>
           <button
             type="button"
             className="titlebar__toggle"
-            onClick={terminalLocation.toggle}
-            title={terminalLocation.state.location === 'center' ? "Move terminal to bottom" : "Move terminal to center"}
-            aria-label="Toggle terminal location"
+            onClick={cycleAccent}
+            title={`Accent: ${getAccentPreset(accentId).name} (click to cycle)`}
+            aria-label="Cycle accent color"
+            style={{ color: getAccentPreset(accentId).color }}
           >
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-              <path d="M1 3h14v1H1V3zm0 3h14v1H1V6zm0 3h14v1H1V9zm0 3h10v1H1v-1z"/>
-            </svg>
+            <IconPalette size={16} />
           </button>
           <ThemeSelector />
         </div>
@@ -962,6 +1005,7 @@ export const App: FC = () => {
                           theme={activeTheme}
                           sessionId={tab.sessionId}
                           isActive={tab.isActive}
+                          tuiMode={tuiMode}
                         />
                       )}
                     </div>
@@ -1029,27 +1073,73 @@ export const App: FC = () => {
               />
             </div>
           )}
-        </div>
-
-        {/* ── Bottom Panel (toggleable, shows file tree when needed) ── */}
-        {terminalLocation.state.location === 'bottom' && (
-          <div className="terminal-bottom-panel">
-            <div className="terminal-bottom-panel__header">
-              <span>Bottom Panel</span>
-              <button
-                className="terminal-bottom-panel__close"
-                onClick={() => terminalLocation.setLocation('center')}
-                title="Close bottom panel (Cmd+Option+T)"
-              >
-                ✕
-              </button>
-            </div>
-            <div className="terminal-bottom-panel__content">
-              {/* Bottom panel content - can be used for file tree or other features */}
-              <p style={{color: '#565f89', padding: '20px'}}>Bottom panel content</p>
-            </div>
-          </div>
+          {/* ── VS Code Bottom Panel (TERMINAL | CLAUDE | OUTPUT) ── */}
+          {bottomPanel.state.isOpen && (
+          <>
+            <ResizeHandle
+              direction="vertical"
+              onDrag={(delta) => bottomPanel.setHeight(bottomPanel.state.height - delta)}
+            />
+            <BottomPanel
+              isOpen={bottomPanel.state.isOpen}
+              activeTab={bottomPanel.state.activeTab}
+              height={bottomPanel.state.height}
+              onTabChange={(tab) => bottomPanel.openTab(tab)}
+              onClose={bottomPanel.closePanel}
+              terminalContent={
+                <div style={{ position: 'absolute', inset: 0 }}>
+                  {terminalTabs.state.tabs.filter(t => t.type === 'terminal').map((tab) => (
+                    <div
+                      key={tab.id}
+                      style={{
+                        position: 'absolute', inset: 0,
+                        visibility: tab.isActive ? 'visible' : 'hidden',
+                        pointerEvents: tab.isActive ? 'auto' : 'none',
+                      }}
+                    >
+                      <TerminalView
+                        ref={terminalRefs.current[tab.id]}
+                        onCommand={handleCommand}
+                        onPtyOutput={handlePtyOutput}
+                        theme={activeTheme}
+                        sessionId={tab.sessionId}
+                        isActive={tab.isActive && bottomPanel.state.activeTab === 'terminal'}
+                        tuiMode={tuiMode}
+                      />
+                    </div>
+                  ))}
+                </div>
+              }
+              claudeContent={
+                <ClaudeCodeChat
+                  messages={chat.state.messages.map(m => ({
+                    role: m.role as 'user' | 'assistant',
+                    content: m.content
+                  }))}
+                  pendingFileOps={chat.pendingFileOps}
+                  onApproveFileOps={chat.approveFileOps}
+                  onRejectFileOps={chat.rejectFileOps}
+                  chatMode={chat.state.chatMode}
+                  onCycleChatMode={chat.cycleChatMode}
+                  onStopAgentLoop={chat.stopAgentLoop}
+                  isAgentLooping={chat.isAgentLooping}
+                  isStreaming={chat.state.isStreaming}
+                  onCopyMessage={(content) => navigator.clipboard.writeText(content)}
+                  onSendMessage={async (text) => { await chat.sendMessage(text) }}
+                  backend={backendSelector.activeBackend}
+                  claudeCodeStream={backendSelector.claudeCodeStream}
+                  activeIntern={agentLoop.activeIntern || DEFAULT_INTERN_ID}
+                  modelLabel={chat.state.activeModelLabel}
+                  presetLabel={chat.state.activePresetLabel}
+                  writeToClaudeCode={backendSelector.writeToClaudeCode}
+                  clearClaudeCodeStream={backendSelector.clearClaudeCodeStream}
+                  placeholder="Type a message or use @ for file context..."
+                />
+              }
+            />
+          </>
         )}
+        </div>
 
         {/* ── Right Sidebar (VRM avatar + chat overlay) ── */}
         {(agentLoop.enabled || chat.state.isOpen || rpMode) && (

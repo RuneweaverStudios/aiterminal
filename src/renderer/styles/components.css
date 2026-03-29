@@ -299,7 +299,7 @@
   font-size: 18px;
   flex-shrink: 0;
   padding-bottom: 2px;
-  color: #bd93f9;
+  color: var(--accent-color, #14b8a6);
 }
 
 .claude-code-chat__textarea {
@@ -983,9 +983,9 @@
   font-weight: 700;
   letter-spacing: 0.04em;
   text-transform: uppercase;
-  background: var(--accent-gradient, linear-gradient(135deg, #bd93f9, #ff79c6));
+  background: var(--accent-gradient, var(--accent-gradient));
   color: #fff;
-  box-shadow: 0 1px 4px rgba(189, 147, 249, 0.25);
+  box-shadow: 0 1px 4px color-mix(in srgb, var(--accent-color, #14b8a6) 25%, transparent);
 }
 
 .token-info,
@@ -1084,7 +1084,7 @@
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: var(--ansi-blue, #bd93f9);
+  background: var(--accent-color, #14b8a6);
   animation: pulseDot 1.4s ease-in-out infinite;
 }
 
@@ -1102,7 +1102,7 @@
     linear-gradient(
       90deg,
       transparent 0%,
-      rgba(189, 147, 249, 0.08) 50%,
+      color-mix(in srgb, var(--accent-color, #14b8a6) 8%, transparent) 50%,
       transparent 100%
     );
   background-size: 200% 100%;
@@ -1246,7 +1246,7 @@
   width: 14px;
   height: 14px;
   border-radius: 50%;
-  background: var(--ansi-blue, #bd93f9);
+  background: var(--accent-color, #14b8a6);
   border: 2px solid rgba(255, 255, 255, 0.15);
   cursor: pointer;
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
@@ -1255,7 +1255,7 @@
 
 .theme-selector__slider::-webkit-slider-thumb:hover {
   transform: scale(1.15);
-  box-shadow: 0 2px 8px rgba(189, 147, 249, 0.4);
+  box-shadow: 0 2px 8px color-mix(in srgb, var(--accent-color, #14b8a6) 40%, transparent);
 }
 
 .theme-selector__divider {
@@ -1322,18 +1322,18 @@
 }
 
 .split-sidebar__divider:hover::before {
-  background: rgba(189, 147, 249, 0.3);
-  border-color: rgba(189, 147, 249, 0.5);
+  background: color-mix(in srgb, var(--accent-color, #14b8a6) 30%, transparent);
+  border-color: color-mix(in srgb, var(--accent-color, #14b8a6) 50%, transparent);
 }
 
 .split-sidebar__divider:hover {
-  background: rgba(189, 147, 249, 0.3);
-  border-color: rgba(189, 147, 249, 0.5);
+  background: color-mix(in srgb, var(--accent-color, #14b8a6) 30%, transparent);
+  border-color: color-mix(in srgb, var(--accent-color, #14b8a6) 50%, transparent);
 }
 
 .split-sidebar__divider--dragging::before {
-  background: rgba(189, 147, 249, 0.4);
-  border-color: rgba(189, 147, 249, 0.5);
+  background: color-mix(in srgb, var(--accent-color, #14b8a6) 40%, transparent);
+  border-color: color-mix(in srgb, var(--accent-color, #14b8a6) 50%, transparent);
   transition: none;
 }
 
@@ -1403,14 +1403,14 @@
 }
 
 .terminal-tab--active {
-  background: rgba(189, 147, 249, 0.12);
-  border-color: rgba(189, 147, 249, 0.3);
-  box-shadow: 0 0 12px rgba(189, 147, 249, 0.15);
+  background: color-mix(in srgb, var(--accent-color, #14b8a6) 12%, transparent);
+  border-color: color-mix(in srgb, var(--accent-color, #14b8a6) 30%, transparent);
+  box-shadow: 0 0 12px color-mix(in srgb, var(--accent-color, #14b8a6) 15%, transparent);
 }
 
 .terminal-tab--active:hover {
-  background: rgba(189, 147, 249, 0.15);
-  border-color: rgba(189, 147, 249, 0.4);
+  background: color-mix(in srgb, var(--accent-color, #14b8a6) 15%, transparent);
+  border-color: color-mix(in srgb, var(--accent-color, #14b8a6) 40%, transparent);
 }
 
 /* Agent-specific border colors */
@@ -1445,7 +1445,7 @@
 }
 
 .terminal-tab--active .terminal-tab__name {
-  color: var(--ansi-blue, #bd93f9);
+  color: var(--accent-color, #14b8a6);
   opacity: 1;
   font-weight: 700;
 }
@@ -1463,7 +1463,7 @@
 }
 
 .terminal-tab--active .terminal-tab__path {
-  color: rgba(189, 147, 249, 0.7);
+  color: color-mix(in srgb, var(--accent-color, #14b8a6) 70%, transparent);
 }
 
 .terminal-tab__agent-badge {
@@ -1531,9 +1531,9 @@
 
 .terminal-tab-bar__add:hover {
   opacity: 1;
-  background: rgba(189, 147, 249, 0.1);
-  border-color: rgba(189, 147, 249, 0.3);
-  color: var(--ansi-blue, #bd93f9);
+  background: color-mix(in srgb, var(--accent-color, #14b8a6) 10%, transparent);
+  border-color: color-mix(in srgb, var(--accent-color, #14b8a6) 30%, transparent);
+  color: var(--accent-color, #14b8a6);
 }
 
 .terminal-tab-bar__add:active {
@@ -2481,7 +2481,7 @@
 
 .sub-agent-card__progress-bar {
   height: 100%;
-  background: linear-gradient(90deg, #7aa2f7, #bd93f9);
+  background: linear-gradient(90deg, #06b6d4, var(--accent-color, #14b8a6));
   transition: width 0.3s ease;
 }
 

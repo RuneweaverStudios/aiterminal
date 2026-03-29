@@ -275,8 +275,8 @@ const styles: Record<string, React.CSSProperties> = {
   count: {
     fontSize: '11px',
     fontWeight: 700,
-    color: '#bd93f9',
-    background: 'rgba(189, 147, 249, 0.15)',
+    color: 'var(--accent-color, #14b8a6)',
+    background: 'var(--accent-glow, rgba(20, 184, 166, 0.15))',
     padding: '1px 6px',
     borderRadius: '10px',
   },
