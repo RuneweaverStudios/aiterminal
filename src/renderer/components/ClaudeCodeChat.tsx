@@ -31,6 +31,7 @@ interface ClaudeCodeChatProps {
   onStopAgentLoop?: () => void;
   isAgentLooping?: boolean;
   onCopyMessage?: (content: string) => void;
+  isStreaming?: boolean;
 }
 
 /**
@@ -60,17 +61,27 @@ export const ClaudeCodeChat: React.FC<ClaudeCodeChatProps> = ({
   onStopAgentLoop,
   isAgentLooping = false,
   onCopyMessage,
+  isStreaming = false,
 }) => {
   const [input, setInput] = useState('');
   const [isMultiline, setIsMultiline] = useState(false);
   const [showToolDetails, setShowToolDetails] = useState(true);
+  const [elapsedSec, setElapsedSec] = useState(0);
+
+  // Streaming timer
+  useEffect(() => {
+    if (!isStreaming) { setElapsedSec(0); return; }
+    setElapsedSec(0);
+    const interval = setInterval(() => setElapsedSec(s => s + 1), 1000);
+    return () => clearInterval(interval);
+  }, [isStreaming]);
 
   // Inject keyframes once (moved from module scope to avoid SSR/test issues)
   useEffect(() => {
     if (!document.head.querySelector('style[data-claude-code-chat]')) {
       const sheet = document.createElement('style');
       sheet.setAttribute('data-claude-code-chat', 'true');
-      sheet.textContent = '@keyframes blink { 0%, 50% { opacity: 1; } 51%, 100% { opacity: 0; } }';
+      sheet.textContent = '@keyframes blink { 0%, 50% { opacity: 1; } 51%, 100% { opacity: 0; } } @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }';
       document.head.appendChild(sheet);
     }
   }, []);
@@ -407,6 +418,19 @@ export const ClaudeCodeChat: React.FC<ClaudeCodeChatProps> = ({
                 </div>
               </div>
             </div>
+          </div>
+        )}
+        {/* Thinking indicator with timer */}
+        {isStreaming && (
+          <div style={{
+            display: 'flex', alignItems: 'center', gap: '8px',
+            padding: '8px 0', fontSize: '12px', color: 'rgba(255,255,255,0.4)',
+          }}>
+            <span style={{ animation: 'spin 1s linear infinite', display: 'inline-block' }}>◐</span>
+            <span>Thinking...</span>
+            <span style={{ fontFamily: 'monospace', fontSize: '10px', opacity: 0.5 }}>
+              {elapsedSec}s
+            </span>
           </div>
         )}
         {/* File operation approval widget */}

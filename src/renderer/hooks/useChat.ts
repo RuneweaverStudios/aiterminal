@@ -602,23 +602,28 @@ export function useChat(): UseChatReturn {
                 if (payload.chunk) {
                   accumulated += payload.chunk
 
-                  // Strip all tool tags during streaming — forgiving patterns for partial/malformed tags
+                  // Strip ALL tool tags during streaming — ultra-forgiving patterns
                   const displayText = accumulated
                     .replace(/\[RUN\].*?(?:\[\/(?:RUN\]?)?|$)/gs, '')
+                    .replace(/\[RUN:[^\]]*?\](?:\s*\[\/RUN\]?)?/g, '')
                     .replace(/\[FILE:[^\]]*?\][\s\S]*?(?:\[\/FILE\]|$)/g, '')
                     .replace(/\[EDIT:[^\]]*?\][\s\S]*?(?:\[\/EDIT\]|$)/g, '')
                     .replace(/\[DELETE:[^\]]*?\]?/g, '')
                     .replace(/\[READ:[^\]]*?\]?/g, '')
-                    // Strip partial tags still being typed (e.g., [READ:tests/integ mid-stream)
+                    // Strip orphaned closing tags
+                    .replace(/\[\/(?:RUN|READ|FILE|EDIT|DELETE)\]?/g, '')
+                    // Strip partial tags mid-stream
                     .replace(/\[(?:RUN|READ|FILE|EDIT|DELETE)(?::[^\]]*)?$/g, '')
+                    .replace(/\[\//g, '') // bare [/ fragments
                     // Strip non-standard tag variants
                     .replace(/\{(?:READ|exec|RUN|EDIT|FILE):[^}]*\}?/gi, '')
                     .replace(/\(voice\)\s*"[^"]*"/g, '')
-                    // Strip XML tool_call tags (some models output these)
                     .replace(/<tool_call>[\s\S]*?<\/tool_call>/g, '')
                     .replace(/<function[\s\S]*?<\/function>/g, '')
                     .replace(/<parameter[\s\S]*?<\/parameter>/g, '')
                     .replace(/CAUTION\s*\([^)]*\)/gi, '')
+                    .replace(/\n{3,}/g, '\n\n')
+                    .trim()
 
                   setMessages((prev) =>
                     prev.map((m) =>

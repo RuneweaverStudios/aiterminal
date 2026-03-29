@@ -1002,6 +1002,7 @@ export const App: FC = () => {
                 onCycleChatMode={chat.cycleChatMode}
                 onStopAgentLoop={chat.stopAgentLoop}
                 isAgentLooping={chat.isAgentLooping}
+                isStreaming={chat.state.isStreaming}
                 onCopyMessage={(content) => navigator.clipboard.writeText(content)}
                 onSendMessage={async (text) => {
                   await chat.sendMessage(text)
