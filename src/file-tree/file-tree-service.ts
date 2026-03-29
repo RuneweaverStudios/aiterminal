@@ -17,6 +17,12 @@ export const DEFAULT_IGNORE_PATTERNS: ReadonlyArray<string> = [
   'coverage',
 ]
 
+// Windows-hidden file/folder names (hidden via FS attribute, not leading dot)
+const WIN_HIDDEN_NAMES = new Set([
+  'desktop.ini', 'thumbs.db', '$recycle.bin', 'system volume information',
+  'ntuser.dat', 'pagefile.sys', 'hiberfil.sys', 'swapfile.sys',
+])
+
 // ---------------------------------------------------------------------------
 // File icon mapping
 // ---------------------------------------------------------------------------
@@ -133,7 +139,7 @@ export async function readDirectory(dirPath: string): Promise<ReadonlyArray<File
           name: dirent.name,
           path: fullPath,
           isDirectory: isDir,
-          isHidden: dirent.name.startsWith('.'),
+          isHidden: dirent.name.startsWith('.') || WIN_HIDDEN_NAMES.has(dirent.name.toLowerCase()),
           size,
           extension: getExtension(dirent.name, isDir),
         }
@@ -238,10 +244,24 @@ export function detectCwd(output: string): string | null {
       continue
     }
 
-    // Pattern 3: Absolute path on its own line (pwd output)
+    // Pattern 3: Absolute Unix path on its own line (pwd output)
     const pwdMatch = trimmed.match(/^(\/[\w./-]+)$/)
     if (pwdMatch) {
       lastMatch = pwdMatch[1]
+      continue
+    }
+
+    // Pattern 4: Windows absolute path (e.g. C:\Users\foo or C:/Users/foo)
+    const winPathMatch = trimmed.match(/^([A-Za-z]:[/\\][\w\s./\\-]*)$/)
+    if (winPathMatch) {
+      lastMatch = winPathMatch[1].trimEnd()
+      continue
+    }
+
+    // Pattern 5: Windows cmd.exe prompt (e.g. C:\Users\foo>)
+    const cmdPromptMatch = trimmed.match(/^([A-Za-z]:[/\\][^>]*)>\s*$/)
+    if (cmdPromptMatch) {
+      lastMatch = cmdPromptMatch[1]
       continue
     }
   }

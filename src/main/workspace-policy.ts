@@ -60,8 +60,8 @@ export function getWorkspaceRoots(): string[] {
 }
 
 function expandTilde(p: string): string {
-  if (p === '~' || p.startsWith('~/')) {
-    return resolve(homedir(), p.slice(1).replace(/^\//, ''));
+  if (p === '~' || p.startsWith('~/') || p.startsWith('~\\')) {
+    return resolve(homedir(), p.slice(2));
   }
   return p;
 }
