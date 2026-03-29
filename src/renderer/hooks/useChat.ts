@@ -404,11 +404,18 @@ export function useChat(): UseChatReturn {
                   const results: string[] = []
                   for (const op of writeOps) {
                     const result = await applyOperation(op)
-                    results.push(result.success
-                      ? `✅ ${op.type} ${op.filePath}`
-                      : `❌ ${op.type} ${op.filePath}: ${result.error}`)
+                    if (result.success) {
+                      if (op.searchText != null) {
+                        // Show diff for search/replace edits
+                        results.push(`✅ **${op.filePath}**\n\`\`\`diff\n${op.searchText.split('\n').map(l => '- ' + l).join('\n')}\n${(op.replaceText || '').split('\n').map(l => '+ ' + l).join('\n')}\n\`\`\``)
+                      } else {
+                        results.push(`✅ ${op.type} ${op.filePath}`)
+                      }
+                    } else {
+                      results.push(`❌ ${op.type} ${op.filePath}: ${result.error}`)
+                    }
                   }
-                  const summaryMsg = createAssistantMessage(results.join('\n'))
+                  const summaryMsg = createAssistantMessage(results.join('\n\n'))
                   setMessages((prev) => [...prev, summaryMsg].slice(-MAX_MESSAGES))
                 } else {
                   setPendingFileOps(writeOps)
