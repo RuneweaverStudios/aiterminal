@@ -295,6 +295,15 @@ function summarizeForTTS(accumulated: string): string {
     .replace(/Output from[^\n]*/g, '')
     .replace(/Analyze the results[^\n]*/g, '')
     .replace(/Continue —[^\n]*/g, '')
+    .replace(/CAUTION\s*\([^)]*\)/gi, '')
+    .replace(/Key Components:[^\n]*/g, '')
+    .replace(/Configuration Details:[^\n]*/g, '')
+    .replace(/Dependencies:[^\n]*/g, '')
+    .replace(/Available CLI[^\n]*/g, '')
+    .replace(/How to Customize:[^\n]*/g, '')
+    .replace(/<tool_call>[\s\S]*?<\/tool_call>/g, '')
+    .replace(/<function[\s\S]*?<\/function>/g, '')
+    .replace(/<parameter[\s\S]*?<\/parameter>/g, '')
     // Strip lines that look like code/config/output
     .split('\n')
     .filter(line => {
@@ -605,6 +614,11 @@ export function useChat(): UseChatReturn {
                     // Strip non-standard tag variants
                     .replace(/\{(?:READ|exec|RUN|EDIT|FILE):[^}]*\}?/gi, '')
                     .replace(/\(voice\)\s*"[^"]*"/g, '')
+                    // Strip XML tool_call tags (some models output these)
+                    .replace(/<tool_call>[\s\S]*?<\/tool_call>/g, '')
+                    .replace(/<function[\s\S]*?<\/function>/g, '')
+                    .replace(/<parameter[\s\S]*?<\/parameter>/g, '')
+                    .replace(/CAUTION\s*\([^)]*\)/gi, '')
 
                   setMessages((prev) =>
                     prev.map((m) =>
