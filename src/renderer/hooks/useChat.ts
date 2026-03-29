@@ -56,6 +56,9 @@ function stripAllToolTags(text: string): string {
     .replace(/<function[\s\S]*?(?:<\/function>|$)/g, '')
     .replace(/<parameter[\s\S]*?(?:<\/parameter>|$)/g, '')
     .replace(/CAUTION\s*\([^)]*\)/gi, '')
+    // Strip filler characters from budget model output (arrows, repeated dots/commas)
+    .replace(/[→←↑↓]{2,}/g, '')
+    .replace(/\s*[→←]\s*/g, ' ')
     .replace(/\n{3,}/g, '\n\n')
     .trim()
 }
@@ -869,14 +872,15 @@ export function useChat(): UseChatReturn {
                 if (operations.length === 0 && /(?:task|everything|all\s+\w+\s+is)\s+(?:complete|done|finished)|^complete\.?$/im.test(accumulated)) {
                   agentLoopActiveRef.current = false
                 }
-                // Stop if AI response is empty or just whitespace
-                if (accumulated.replace(/\[.*?\]/g, '').trim().length === 0) {
+                // Stop if AI response is empty or just filler (arrows, dots, spaces)
+                const strippedContent = accumulated.replace(/\[.*?\]/g, '').replace(/[→←↑↓•·,\s.]+/g, '').trim()
+                if (strippedContent.length === 0) {
                   agentLoopActiveRef.current = false
                 }
-                // Nudge: if AI described intent but used no tool tags, remind it to act
+                // Nudge: if AI produced content but used no tool tags, remind it to act
                 if (operations.length === 0 && !accumulated.includes('[RUN]') && !accumulated.includes('[RUN:') && agentLoopActiveRef.current
                     && !/\bcomplete\b|\bdone\b|\bfinished\b/i.test(accumulated)
-                    && accumulated.trim().length > 20) {
+                    && strippedContent.length > 5) {
                   agentLoopIterationsRef.current++
                   if (agentLoopIterationsRef.current < MAX_AGENT_ITERATIONS) {
                     setTimeout(() => {
