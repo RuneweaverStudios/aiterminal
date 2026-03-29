@@ -510,6 +510,8 @@ const styles: Record<string, React.CSSProperties> = {
     display: 'flex',
     gap: '8px',
     maxWidth: '85%',
+    overflow: 'hidden',
+    minWidth: 0,
   },
 
   roleLabel: {
@@ -528,6 +530,8 @@ const styles: Record<string, React.CSSProperties> = {
 
   markdownWrapper: {
     width: '100%',
+    overflow: 'hidden',
+    wordBreak: 'break-word' as const,
   },
 
   markdownParagraph: {
@@ -536,12 +540,17 @@ const styles: Record<string, React.CSSProperties> = {
   },
 
   markdownCodeBlock: {
+    display: 'block' as const,
     backgroundColor: 'rgba(0,0,0,0.3)',
     padding: '12px',
     borderRadius: '6px',
     fontFamily: 'monospace',
-    fontSize: '13px',
+    fontSize: '12px',
+    lineHeight: '1.4',
     overflow: 'auto',
+    maxHeight: '300px',
+    whiteSpace: 'pre-wrap' as const,
+    wordBreak: 'break-all' as const,
     border: '1px solid rgba(255,255,255,0.1)',
     margin: '8px 0',
   },

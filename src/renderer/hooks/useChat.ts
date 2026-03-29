@@ -159,6 +159,49 @@ function capturePtyOutput(sessionId: string, _cmd: string, durationMs: number): 
 }
 
 // ---------------------------------------------------------------------------
+// Extract important lines from command output (errors, warnings, summaries)
+// ---------------------------------------------------------------------------
+
+function extractImportantOutput(raw: string, cmd: string): string {
+  const lines = raw.split('\n')
+  const important: string[] = []
+  const isTest = /test|spec|check|lint|build|compile/i.test(cmd)
+
+  for (const line of lines) {
+    const l = line.trim()
+    if (l.length === 0) continue
+
+    // Always keep: errors, warnings, failures, panics
+    if (/error|Error|ERROR|fail|FAIL|panic|PANIC|warning|warn(?:ing)?:|WARN/i.test(l)) {
+      important.push(l)
+      continue
+    }
+    // Test results summary lines
+    if (isTest && /(?:test result|tests? (?:passed|failed|ok)|running \d|PASSED|FAILED|✓|✗|✘|ok \(|failures:)/i.test(l)) {
+      important.push(l)
+      continue
+    }
+    // Compilation status
+    if (/^(?:Compiling|Finished|Building|Linking|warning\[|error\[)/i.test(l)) {
+      important.push(l)
+      continue
+    }
+    // Exit codes and summaries
+    if (/(?:exit code|exited with|status:|\d+ passed|\d+ failed|\d+ error)/i.test(l)) {
+      important.push(l)
+      continue
+    }
+  }
+
+  // Deduplicate and limit
+  const unique = [...new Set(important)]
+  if (unique.length > 50) {
+    return unique.slice(0, 25).join('\n') + '\n... (' + (unique.length - 25) + ' more lines)\n' + unique.slice(-10).join('\n')
+  }
+  return unique.join('\n')
+}
+
+// ---------------------------------------------------------------------------
 // Hook
 // ---------------------------------------------------------------------------
 
@@ -329,15 +372,14 @@ export function useChat(): UseChatReturn {
                   window.electronAPI.writeToSession(sessionId, cmd + '\r')
 
                   // Capture PTY output and feed back to AI for analysis
-                  capturePtyOutput(sessionId, cmd, 5000).then(output => {
+                  capturePtyOutput(sessionId, cmd, 8000).then(output => {
                     if (output.trim().length > 0) {
-                      // Auto-send captured output as follow-up for AI to analyze
-                      const truncated = output.length > 3000
-                        ? output.slice(-3000) + '\n... (truncated)'
-                        : output
-                      const followUp = `Terminal output from \`${cmd}\`:\n\`\`\`\n${truncated}\n\`\`\`\nAnalyze these results.`
-                      // Use sendMessage recursively (will be defined in outer scope)
-                      pendingSendRef.current?.(followUp)
+                      // Extract only important lines: errors, warnings, test results, summaries
+                      const important = extractImportantOutput(output, cmd)
+                      if (important.length > 0) {
+                        const followUp = `Output from \`${cmd}\` (key lines only):\n\`\`\`\n${important}\n\`\`\`\nAnalyze the results. Report: status (pass/fail), errors found, and suggested fixes. Be concise.`
+                        pendingSendRef.current?.(followUp)
+                      }
                     }
                   })
                 }
