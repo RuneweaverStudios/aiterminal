@@ -27,6 +27,7 @@ if (superEnv) {
   config({ path: resolve(superEnv), override: false });
 }
 import { OpenRouterClient } from '../ai/openrouter-client.js';
+import { DEFAULT_PRESET } from '../ai/presets.js';
 import { setupAllHandlers, type SessionManagerRef } from './ipc-handlers.js';
 import { kokoroTtsService } from './kokoro-service.js';
 import { TerminalSessionManager } from './terminal-session-manager.js';
@@ -131,7 +132,7 @@ function createAIClient(): OpenRouterClient | null {
   return new OpenRouterClient({
     apiKey,
     baseUrl: 'https://openrouter.ai/api/v1',
-    activePreset: 'balanced',
+    activePreset: DEFAULT_PRESET,
     systemPrompt: SYSTEM_PROMPT,
   });
 }
