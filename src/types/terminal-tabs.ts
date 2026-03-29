@@ -4,6 +4,7 @@
 
 export interface TerminalTab {
   readonly id: string;
+  readonly type: 'terminal';
   /** PTY session id — stable for this tab until closed. */
   readonly sessionId: string;
   readonly name: string;
@@ -17,8 +18,21 @@ export interface TerminalTab {
   readonly agentActivity?: string;
 }
 
+export interface FileTab {
+  readonly id: string;
+  readonly type: 'file';
+  readonly name: string;
+  readonly filePath: string;
+  readonly content: string;
+  readonly language: string | null;
+  readonly createdAt: number;
+  readonly isActive: boolean;
+}
+
+export type Tab = TerminalTab | FileTab;
+
 export interface TerminalTabsState {
-  readonly tabs: ReadonlyArray<TerminalTab>;
+  readonly tabs: ReadonlyArray<Tab>;
   readonly activeTabId: string | null;
   readonly activeSessionId: string | null;
   readonly sessions: ReadonlyMap<string, TerminalSessionInfo>;

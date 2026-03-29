@@ -12,7 +12,7 @@
  */
 
 import { useState, useCallback, useEffect, useMemo, useRef } from 'react'
-import type { TerminalTab, TerminalTabsState, TerminalSessionInfo } from '@/types/terminal-tabs'
+import type { TerminalTab, FileTab, Tab, TerminalTabsState, TerminalSessionInfo } from '@/types/terminal-tabs'
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -51,6 +51,7 @@ export interface UseTerminalTabsReturn {
   readonly getActiveSessionId: () => string | null
   readonly updateTabAgentActivity: (tabId: string, intern: string, activity: string) => void
   readonly clearTabAgentActivity: (tabId: string) => void
+  readonly openFileTab: (filePath: string, content: string, language: string | null) => void
 }
 
 // ---------------------------------------------------------------------------
@@ -58,7 +59,7 @@ export interface UseTerminalTabsReturn {
 // ---------------------------------------------------------------------------
 
 export function useTerminalTabs(): UseTerminalTabsReturn {
-  const [tabs, setTabs] = useState<ReadonlyArray<TerminalTab>>([])
+  const [tabs, setTabs] = useState<ReadonlyArray<Tab>>([])
   const [activeTabId, setActiveTabId] = useState<string | null>(null)
   const sessionsRef = useRef<Map<string, TerminalSessionInfo>>(new Map())
   const tabToSessionMapRef = useRef<Map<string, string>>(new Map()) // tabId -> sessionId
@@ -117,6 +118,7 @@ export function useTerminalTabs(): UseTerminalTabsReturn {
         // Create tab
         const newTab: TerminalTab = {
           id: tabId,
+          type: 'terminal',
           sessionId,
           name: shellName,
           shell: sessionShell || shell || '',
@@ -155,31 +157,18 @@ export function useTerminalTabs(): UseTerminalTabsReturn {
         return
       }
 
-      // Find the session for this tab using the mapping
-      const sessionId = tabToSessionMapRef.current.get(tabId)
-      if (!sessionId) {
-        console.warn('[useTerminalTabs] No session found for tab:', tabId)
-        return
-      }
-
-      const sessionInfo = sessionsRef.current.get(sessionId)
-      if (sessionInfo) {
-        // Unsubscribe from session data
-        sessionInfo.unsubscribe()
-
-        // Destroy session in main process
-        const hasElectronAPI =
-          typeof window !== 'undefined' &&
-          'electronAPI' in window &&
-          window.electronAPI?.destroyTerminalSession
-
-        if (hasElectronAPI) {
-          window.electronAPI.destroyTerminalSession(sessionId)
+      // Only clean up PTY for terminal tabs
+      if (tab.type === 'terminal') {
+        const sessionId = tabToSessionMapRef.current.get(tabId)
+        if (sessionId) {
+          const sessionInfo = sessionsRef.current.get(sessionId)
+          if (sessionInfo) {
+            sessionInfo.unsubscribe()
+            window.electronAPI?.destroyTerminalSession?.(sessionId)
+            sessionsRef.current.delete(sessionId)
+          }
+          tabToSessionMapRef.current.delete(tabId)
         }
-
-        // Remove from sessions map
-        sessionsRef.current.delete(sessionId)
-        tabToSessionMapRef.current.delete(tabId)
       }
 
       // Remove tab and set new active tab if needed
@@ -280,7 +269,8 @@ export function useTerminalTabs(): UseTerminalTabsReturn {
   const getActiveSessionId = useCallback((): string | null => {
     if (!activeTabId) return null
     const tab = tabs.find((t) => t.id === activeTabId)
-    return tab?.sessionId ?? null
+    if (!tab || tab.type !== 'terminal') return null
+    return tab.sessionId
   }, [activeTabId, tabs])
 
   // -------------------------------------------------------------------------
@@ -395,7 +385,8 @@ export function useTerminalTabs(): UseTerminalTabsReturn {
   const activeSessionId = useMemo(() => {
     if (!activeTabId) return null
     const tab = tabs.find((t) => t.id === activeTabId)
-    return tab?.sessionId ?? null
+    if (!tab || tab.type !== 'terminal') return null
+    return tab.sessionId
   }, [tabs, activeTabId])
 
   const state: TerminalTabsState = useMemo(
@@ -406,6 +397,40 @@ export function useTerminalTabs(): UseTerminalTabsReturn {
       sessions: sessionsRef.current,
     }),
     [tabs, activeTabId, activeSessionId],
+  )
+
+  // -------------------------------------------------------------------------
+  // Open file tab
+  // -------------------------------------------------------------------------
+
+  const openFileTab = useCallback(
+    (filePath: string, content: string, language: string | null) => {
+      // Check if file is already open — switch to it
+      const existing = tabs.find((t) => t.type === 'file' && t.filePath === filePath)
+      if (existing) {
+        setTabs((prev) => prev.map((t) => ({ ...t, isActive: t.id === existing.id })))
+        setActiveTabId(existing.id)
+        return
+      }
+
+      const tabId = generateTabId()
+      const fileName = filePath.split('/').pop() || filePath
+
+      const newTab: FileTab = {
+        id: tabId,
+        type: 'file',
+        name: fileName,
+        filePath,
+        content,
+        language,
+        createdAt: Date.now(),
+        isActive: true,
+      }
+
+      setTabs((prev) => [...prev.map((t) => ({ ...t, isActive: false })), newTab])
+      setActiveTabId(tabId)
+    },
+    [tabs],
   )
 
   return {
@@ -419,5 +444,6 @@ export function useTerminalTabs(): UseTerminalTabsReturn {
     getActiveSessionId,
     updateTabAgentActivity,
     clearTabAgentActivity,
+    openFileTab,
   }
 }

@@ -16,14 +16,14 @@
 
 import { useState, useCallback, useRef, useEffect } from 'react'
 import type { FC } from 'react'
-import type { TerminalTab } from '@/types/terminal-tabs'
+import type { Tab } from '@/types/terminal-tabs'
 import type { FileEntry } from '@/types/file-tree'
 import { TerminalTabBar } from './TerminalTabBar'
 import { FileTree } from './FileTree'
 
 export interface SplitSidebarProps {
   // Terminal tabs props
-  readonly tabs: ReadonlyArray<TerminalTab>
+  readonly tabs: ReadonlyArray<Tab>
   readonly activeTabId: string | null
   readonly onTabClick: (tabId: string) => void
   readonly onTabClose: (tabId: string) => void

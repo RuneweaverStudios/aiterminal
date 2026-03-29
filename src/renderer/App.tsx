@@ -32,6 +32,7 @@ import { useBackendSelector } from '@/renderer/hooks/useBackendSelector'
 // Components
 import { TerminalView } from '@/renderer/components/TerminalView'
 import type { TerminalViewRef } from '@/renderer/components/TerminalView'
+import { FileTabView } from '@/renderer/components/FileTabView'
 import { CmdKBar } from '@/renderer/components/CmdKBar'
 import { PresetSwitcher } from '@/renderer/components/PresetSwitcher'
 import { ThemeSelector } from '@/renderer/components/ThemeSelector'
@@ -169,7 +170,7 @@ export const App: FC = () => {
   // Active terminal session cwd (file tree + picker); derived from active tab
   const activeTabCwd = useMemo(() => {
     const activeTab = terminalTabs.state.tabs.find(t => t.isActive)
-    return activeTab?.cwd || ''
+    return (activeTab && activeTab.type === 'terminal' ? activeTab.cwd : '') || ''
   }, [terminalTabs.state.tabs])
 
   // TTS gating ref (used in event listener closures)
@@ -586,10 +587,26 @@ export const App: FC = () => {
   // File tree -> file preview connection
   // -------------------------------------------------------------------------
 
-  const handleFileTreeSelect = useCallback((path: string) => {
-    // Open file in preview for quick viewing
-    filePreview.openFile(path)
-  }, [filePreview.openFile])
+  const handleFileTreeSelect = useCallback(async (path: string) => {
+    // Open file as a tab in the terminal area
+    try {
+      const result = await window.electronAPI.readFile(path)
+      if (result.content != null) {
+        const ext = path.split('.').pop() || ''
+        const langMap: Record<string, string> = {
+          ts: 'typescript', tsx: 'tsx', js: 'javascript', jsx: 'jsx',
+          rs: 'rust', py: 'python', go: 'go', rb: 'ruby',
+          css: 'css', html: 'html', json: 'json', toml: 'toml',
+          yaml: 'yaml', yml: 'yaml', md: 'markdown', sh: 'shell',
+          sql: 'sql', c: 'c', cpp: 'cpp', h: 'c', java: 'java',
+        }
+        terminalTabs.openFileTab(path, result.content, langMap[ext] || null)
+      }
+    } catch {
+      // Fallback to preview if read fails
+      filePreview.openFile(path)
+    }
+  }, [terminalTabs.openFileTab, filePreview.openFile])
 
   const handleFileTreeSelectDirectory = useCallback((path: string) => {
     // Send cd command to active terminal
@@ -916,14 +933,22 @@ export const App: FC = () => {
                           : 'terminal-stack__layer terminal-stack__layer--inactive'
                       }
                     >
-                      <TerminalView
-                        ref={terminalRefs.current[tab.id]}
-                        onCommand={handleCommand}
-                        onPtyOutput={handlePtyOutput}
-                        theme={activeTheme}
-                        sessionId={tab.sessionId}
-                        isActive={tab.isActive}
-                      />
+                      {tab.type === 'file' ? (
+                        <FileTabView
+                          filePath={tab.filePath}
+                          content={tab.content}
+                          language={tab.language}
+                        />
+                      ) : (
+                        <TerminalView
+                          ref={terminalRefs.current[tab.id]}
+                          onCommand={handleCommand}
+                          onPtyOutput={handlePtyOutput}
+                          theme={activeTheme}
+                          sessionId={tab.sessionId}
+                          isActive={tab.isActive}
+                        />
+                      )}
                     </div>
                   )
                 })}

@@ -11,7 +11,7 @@
  */
 
 import type { FC } from 'react'
-import type { TerminalTab } from '@/types/terminal-tabs'
+import type { Tab } from '@/types/terminal-tabs'
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -43,7 +43,7 @@ function getInternLabel(intern?: string): string {
 }
 
 export interface TerminalTabBarProps {
-  readonly tabs: ReadonlyArray<TerminalTab>
+  readonly tabs: ReadonlyArray<Tab>
   readonly activeTabId: string | null
   readonly onTabClick: (tabId: string) => void
   readonly onTabClose: (tabId: string) => void
@@ -69,16 +69,25 @@ export const TerminalTabBar: FC<TerminalTabBarProps> = ({
         {tabs.map((tab) => (
           <div
             key={tab.id}
-            className={`terminal-tab ${tab.id === activeTabId ? 'terminal-tab--active' : ''} ${tab.agentIntern ? `terminal-tab--agent-${tab.agentIntern}` : ''}`}
+            className={`terminal-tab ${tab.id === activeTabId ? 'terminal-tab--active' : ''} ${tab.type === 'terminal' && tab.agentIntern ? `terminal-tab--agent-${tab.agentIntern}` : ''}`}
             onClick={() => onTabClick(tab.id)}
-            title={`${tab.name} - ${tab.cwd}${tab.agentActivity ? `\nAgent: ${tab.agentActivity}` : ''}`}
+            title={tab.type === 'file' ? tab.filePath : `${tab.name} - ${tab.cwd}${tab.agentActivity ? `\nAgent: ${tab.agentActivity}` : ''}`}
           >
             <div className="terminal-tab__content">
-              <span className="terminal-tab__name">{tab.name}</span>
-              <span className="terminal-tab__path" title={tab.cwd}>
-                {shortenPath(tab.cwd)}
+              <span className="terminal-tab__name">
+                {tab.type === 'file' ? '📄 ' : ''}{tab.name}
               </span>
-              {tab.agentIntern && (
+              {tab.type === 'terminal' && (
+                <span className="terminal-tab__path" title={tab.cwd}>
+                  {shortenPath(tab.cwd)}
+                </span>
+              )}
+              {tab.type === 'file' && (
+                <span className="terminal-tab__path" title={tab.filePath} style={{ opacity: 0.5 }}>
+                  {shortenPath(tab.filePath)}
+                </span>
+              )}
+              {tab.type === 'terminal' && tab.agentIntern && (
                 <span
                   className="terminal-tab__agent-badge"
                   style={{ backgroundColor: getInternColor(tab.agentIntern) }}
