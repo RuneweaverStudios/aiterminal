@@ -9,6 +9,8 @@
  */
 
 import { ipcMain, BrowserWindow } from 'electron';
+import { resolve } from 'node:path';
+import { existsSync } from 'node:fs';
 import type { AgentLoopConfig, AgentEvent } from '../agent-loop/events.js';
 import { getAgentLoopRouter } from '../agent-loop/router.js';
 import type { IAIClient } from '../ai/client.js';
@@ -37,6 +39,26 @@ function createAiQueryFn(): ((prompt: string) => Promise<string>) | undefined {
     });
     return response.content ?? '';
   };
+}
+
+/**
+ * Validate workspace root from renderer — reject traversal and sensitive paths.
+ */
+function sanitizeWorkspaceRoot(raw?: string): string {
+  const homeDir = process.env.HOME || process.env.USERPROFILE || '.';
+  const fallback = resolve(homeDir, '.interns');
+  if (!raw) return fallback;
+
+  const resolved = resolve(raw);
+  // Reject paths containing traversal or pointing to system roots
+  if (resolved.includes('..') || resolved === '/' || resolved === 'C:\\') {
+    return fallback;
+  }
+  // Must exist as a directory (or be creatable under home)
+  if (!existsSync(resolved) && !resolved.startsWith(resolve(homeDir))) {
+    return fallback;
+  }
+  return resolved;
 }
 
 /**
@@ -75,7 +97,7 @@ ipcMain.handle('agent:start', async (_event, request) => {
   const agentConfig: AgentLoopConfig = {
     sessionId,
     runId,
-    workspaceRoot: config.workspaceRoot || `${process.env.HOME || process.env.USERPROFILE || '.'}/.interns`,
+    workspaceRoot: sanitizeWorkspaceRoot(config.workspaceRoot),
     transcriptDb: config.transcriptDb,
     timeouts: {
       mei: config.timeouts?.mei || defaultTimeout.mei,

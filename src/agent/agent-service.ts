@@ -27,6 +27,19 @@ function generateId(prefix: string): string {
 const MAX_FILE_CONTENT_LENGTH = 5000
 const TRUNCATION_MARKER = '\n... [truncated]'
 
+/**
+ * Reject file paths with traversal patterns or absolute paths.
+ * Returns null if the path is unsafe.
+ */
+function sanitizeFilePath(raw: string): string | null {
+  const trimmed = raw.trim()
+  if (trimmed.length === 0) return null
+  // Reject absolute paths and traversal
+  if (trimmed.startsWith('/') || trimmed.startsWith('\\') || /^[A-Za-z]:/.test(trimmed)) return null
+  if (trimmed.includes('..')) return null
+  return trimmed
+}
+
 // ---------------------------------------------------------------------------
 // parseAgentResponse
 // ---------------------------------------------------------------------------
@@ -50,10 +63,10 @@ export function parseAgentResponse(
   let match: RegExpExecArray | null = null
 
   while ((match = fileRegex.exec(aiContent)) !== null) {
-    const filePath = match[1].trim()
+    const filePath = sanitizeFilePath(match[1])
     const content = match[2].trim()
 
-    if (filePath.length === 0) continue
+    if (!filePath) continue
 
     operations.push({
       id: generateId('op'),
@@ -69,10 +82,10 @@ export function parseAgentResponse(
   const editRegex = /\[EDIT:([^\]]+)\]([\s\S]*?)\[\/EDIT\]/g
 
   while ((match = editRegex.exec(aiContent)) !== null) {
-    const filePath = match[1].trim()
+    const filePath = sanitizeFilePath(match[1])
     const content = match[2].trim()
 
-    if (filePath.length === 0) continue
+    if (!filePath) continue
 
     // Check for search/replace syntax: <<<< SEARCH ... ==== ... >>>> REPLACE
     const srMatch = content.match(/<<<<?[\t ]*SEARCH\n([\s\S]*?)\n====([\s\S]*?)\n>>>>?[\t ]*REPLACE/)
@@ -105,8 +118,8 @@ export function parseAgentResponse(
   const readRegex = /\[READ:([^\]]+)\]/g
 
   while ((match = readRegex.exec(aiContent)) !== null) {
-    const filePath = match[1].trim()
-    if (filePath.length === 0) continue
+    const filePath = sanitizeFilePath(match[1])
+    if (!filePath) continue
 
     operations.push({
       id: generateId('op'),
@@ -121,9 +134,9 @@ export function parseAgentResponse(
   const deleteRegex = /\[DELETE:([^\]]+)\]/g
 
   while ((match = deleteRegex.exec(aiContent)) !== null) {
-    const filePath = match[1].trim()
+    const filePath = sanitizeFilePath(match[1])
 
-    if (filePath.length === 0) continue
+    if (!filePath) continue
 
     // Skip if this delete path was already captured as part of a FILE/EDIT closing tag
     // (e.g., [DELETE:path] should not match [/DELETE] style closings)
