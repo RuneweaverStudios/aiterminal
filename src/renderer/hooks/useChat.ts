@@ -505,7 +505,7 @@ export function useChat(): UseChatReturn {
         ? '[PLAN MODE] Describe what changes you would make and why, but do NOT use [FILE], [EDIT], or [DELETE] tags. Only analyze and explain your plan.\n\n'
         : chatMode === 'autocode'
         ? '[AUTOCODE MODE] You have full autonomy. DO NOT suggest actions — TAKE them directly. Use [READ:path] to read files, [EDIT:path] to fix code, [RUN]command[/RUN] to execute commands. Act immediately without asking permission. If you find errors, read the file, fix it, and verify. Never say "you should" — just do it.\n\n'
-        : ''
+        : 'Use your tool tags to take action. Read files with [READ:path], run commands with [RUN]command[/RUN], edit files with [EDIT:path]. Act proactively — do not just describe what you would do.\n\n'
 
       const allContext = [persistentFiles, fileContext].filter(Boolean).join('\n\n')
       const fullPrompt = modePrefix + (allContext
