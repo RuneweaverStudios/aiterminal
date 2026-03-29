@@ -904,7 +904,20 @@ export function useChat(): UseChatReturn {
                         readFiles ? `Read: ${readFiles}` : '',
                         editFiles ? `Applied edits to: ${editFiles}` : '',
                       ].filter(Boolean).join('. ')
-                      const context = parts || 'Previous step processed'
+                      let context = parts || 'Previous step processed'
+
+                      // If the response ended with a partial tag, extract what the AI was trying to do
+                      const partialMatch = accumulated.match(/\[(READ|EDIT|RUN|FILE):?([^\]\n]*)$/)
+                      if (partialMatch) {
+                        const tag = partialMatch[1]
+                        const arg = partialMatch[2]?.trim()
+                        if (arg) {
+                          context += `. You were about to [${tag}:${arg}] — complete that action now`
+                        } else {
+                          context += `. Your response was cut off mid-tag — continue from where you left off`
+                        }
+                      }
+
                       // Send as hidden continuation (no user message bubble)
                       sendMessageInternal(`${context}. Continue — what's the next step? Use [RUN:command] [READ:path] [EDIT:path] tags. If done, say "Complete."`)
                     }
