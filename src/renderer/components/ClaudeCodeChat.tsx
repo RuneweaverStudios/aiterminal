@@ -243,7 +243,20 @@ export const ClaudeCodeChat: React.FC<ClaudeCodeChatProps> = ({
 
       {/* Message History */}
       <div ref={messagesContainerRef} style={styles.messagesContainer}>
-        {/* In Claude Code mode, use local messages; in OpenRouter mode, use prop messages */}
+        {/* Empty state */}
+        {(backend === 'claude-code' ? localMessages : messages).length === 0 && (
+          <div style={styles.emptyState}>
+            <div style={styles.emptyIcon}>{'>'}_</div>
+            <div style={styles.emptyTitle}>Ready to assist</div>
+            <div style={styles.emptyHint}>
+              Ask me to build, fix, or analyze code. I can read files, edit code, and run commands.
+            </div>
+            <div style={styles.emptyShortcuts}>
+              <span>Shift+Tab: cycle mode</span>
+              <span>@file: attach context</span>
+            </div>
+          </div>
+        )}
         {(backend === 'claude-code' ? localMessages : messages).map((msg, idx) => (
           <div
             key={idx}
@@ -262,35 +275,18 @@ export const ClaudeCodeChat: React.FC<ClaudeCodeChatProps> = ({
             <div style={styles.messageBubble}>
               <div style={styles.messageContent}>
                 {(() => {
-                  // Extract tool calls for assistant messages
                   if (msg.role === 'assistant') {
                     const { cleanText, toolCalls } = renderToolCalls(msg.content);
                     return (
                       <>
                         {toolCalls.length > 0 && (
-                          <div style={{ marginBottom: toolCalls.length > 0 && cleanText ? '8px' : 0 }}>
+                          <div style={{ marginBottom: cleanText ? '8px' : 0 }}>
                             {toolCalls}
                           </div>
                         )}
                         {cleanText && (
                           <div style={styles.markdownWrapper}>
-                            <ReactMarkdown
-                              components={{
-                                code: ({children, className}: any) => {
-                                  const isBlock = className?.includes('language-');
-                                  return (
-                                    <code style={isBlock ? styles.markdownCodeBlock : styles.markdownInlineCode}>
-                                      {children}
-                                    </code>
-                                  );
-                                },
-                                p: ({children}: any) => <p style={styles.markdownParagraph}>{children}</p>,
-                                ul: ({children}: any) => <ul style={{margin: '0 0 8px 0', paddingLeft: '16px'}}>{children}</ul>,
-                                ol: ({children}: any) => <ol style={{margin: '0 0 8px 0', paddingLeft: '16px'}}>{children}</ol>,
-                                li: ({children}: any) => <li style={{marginBottom: '2px'}}>{children}</li>,
-                                strong: ({children}: any) => <strong style={{fontWeight: 600}}>{children}</strong>,
-                              }}
-                            >
+                            <ReactMarkdown components={mdComponents}>
                               {cleanText}
                             </ReactMarkdown>
                           </div>
@@ -298,26 +294,9 @@ export const ClaudeCodeChat: React.FC<ClaudeCodeChatProps> = ({
                       </>
                     );
                   }
-                  // User messages — plain markdown
                   return (
                     <div style={styles.markdownWrapper}>
-                      <ReactMarkdown
-                        components={{
-                          code: ({children, className}: any) => {
-                            const isBlock = className?.includes('language-');
-                            return (
-                              <code style={isBlock ? styles.markdownCodeBlock : styles.markdownInlineCode}>
-                                {children}
-                              </code>
-                            );
-                          },
-                          p: ({children}: any) => <p style={styles.markdownParagraph}>{children}</p>,
-                          ul: ({children}: any) => <ul style={{margin: '0 0 8px 0', paddingLeft: '16px'}}>{children}</ul>,
-                          ol: ({children}: any) => <ol style={{margin: '0 0 8px 0', paddingLeft: '16px'}}>{children}</ol>,
-                          li: ({children}: any) => <li style={{marginBottom: '2px'}}>{children}</li>,
-                          strong: ({children}: any) => <strong style={{fontWeight: 600}}>{children}</strong>,
-                        }}
-                      >
+                      <ReactMarkdown components={mdComponents}>
                         {msg.content}
                       </ReactMarkdown>
                     </div>
@@ -338,21 +317,7 @@ export const ClaudeCodeChat: React.FC<ClaudeCodeChatProps> = ({
               <div style={styles.messageContent}>
                 <div style={styles.markdownWrapper}>
                   <ReactMarkdown
-                    components={{
-                      code: ({children, className}: any) => {
-                        const isBlock = className?.includes('language-');
-                        return (
-                          <code style={isBlock ? styles.markdownCodeBlock : styles.markdownInlineCode}>
-                            {children}
-                          </code>
-                        );
-                      },
-                      p: ({children}: any) => <p style={styles.markdownParagraph}>{children}</p>,
-                      ul: ({children}: any) => <ul style={{margin: '0 0 8px 0', paddingLeft: '16px'}}>{children}</ul>,
-                      ol: ({children}: any) => <ol style={{margin: '0 0 8px 0', paddingLeft: '16px'}}>{children}</ol>,
-                      li: ({children}: any) => <li style={{marginBottom: '2px'}}>{children}</li>,
-                      strong: ({children}: any) => <strong style={{fontWeight: 600}}>{children}</strong>,
-                    }}
+                    components={mdComponents}
                   >
                     {claudeCodeStream}
                   </ReactMarkdown>
@@ -677,6 +642,60 @@ const styles: Record<string, React.CSSProperties> = {
     userSelect: 'none' as const,
     minWidth: '10px',
   },
+
+  emptyState: {
+    display: 'flex',
+    flexDirection: 'column' as const,
+    alignItems: 'center',
+    justifyContent: 'center',
+    height: '100%',
+    minHeight: '200px',
+    gap: '8px',
+    opacity: 0.5,
+  },
+  emptyIcon: {
+    fontSize: '24px',
+    fontFamily: 'monospace',
+    fontWeight: 700,
+    color: 'rgba(99, 102, 241, 0.6)',
+  },
+  emptyTitle: {
+    fontSize: '14px',
+    fontWeight: 600,
+    color: 'rgba(255,255,255,0.6)',
+  },
+  emptyHint: {
+    fontSize: '12px',
+    color: 'rgba(255,255,255,0.35)',
+    textAlign: 'center' as const,
+    maxWidth: '280px',
+    lineHeight: '1.4',
+  },
+  emptyShortcuts: {
+    display: 'flex',
+    gap: '12px',
+    fontSize: '10px',
+    color: 'rgba(255,255,255,0.2)',
+    fontFamily: 'monospace',
+    marginTop: '8px',
+  },
+};
+
+// Shared markdown components (DRY — single definition for all renderers)
+const mdComponents = {
+  code: ({children, className}: any) => {
+    const isBlock = className?.includes('language-');
+    return (
+      <code style={isBlock ? styles.markdownCodeBlock : styles.markdownInlineCode}>
+        {children}
+      </code>
+    );
+  },
+  p: ({children}: any) => <p style={styles.markdownParagraph}>{children}</p>,
+  ul: ({children}: any) => <ul style={{margin: '0 0 8px 0', paddingLeft: '16px'}}>{children}</ul>,
+  ol: ({children}: any) => <ol style={{margin: '0 0 8px 0', paddingLeft: '16px'}}>{children}</ol>,
+  li: ({children}: any) => <li style={{marginBottom: '2px'}}>{children}</li>,
+  strong: ({children}: any) => <strong style={{fontWeight: 600}}>{children}</strong>,
 };
 
 // Inject keyframes for blinking cursor
