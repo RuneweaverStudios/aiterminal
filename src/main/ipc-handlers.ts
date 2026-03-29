@@ -365,6 +365,7 @@ export function setupAllHandlers(
       model?: string;
       modelLabel?: string;
       usage?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number };
+      toolCall?: string;
     }) => {
       if (!event.sender.isDestroyed()) {
         event.sender.send('ai-stream-chunk', payload);
@@ -404,6 +405,11 @@ export function setupAllHandlers(
           try {
             usage = JSON.parse(chunk.slice(7));
           } catch { /* ignore parse errors */ }
+          continue;
+        }
+        // Check for tool call sentinel from stream
+        if (chunk.startsWith('\x00TOOLCALL:')) {
+          send({ requestId, chunk, done: false, toolCall: chunk.slice(10) });
           continue;
         }
         send({ requestId, chunk, done: false });

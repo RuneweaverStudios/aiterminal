@@ -742,6 +742,7 @@ export function useChat(): UseChatReturn {
             let repetitionCount = 0
             let lastChunkPattern = ''
             let earlyTTSFired = false
+            const nativeToolCalls: Array<{ name: string; arguments: Record<string, string> }> = []
 
             await api.aiQueryStream(
               { prompt: fullPrompt, taskType: 'general', context, modelOverride },
@@ -750,6 +751,32 @@ export function useChat(): UseChatReturn {
                 if (!activeStreamIdRef.current && payload.requestId) {
                   activeStreamIdRef.current = payload.requestId
                 }
+
+                // Handle native tool calls (from function calling API)
+                if ((payload as any).toolCall) {
+                  try {
+                    const tc = JSON.parse((payload as any).toolCall)
+                    nativeToolCalls.push(tc)
+                    console.log('[useChat] Native tool call received:', tc.name, tc.arguments)
+
+                    // Convert to text tag format for display + existing processing pipeline
+                    const { name, arguments: args } = tc
+                    let tagText = ''
+                    if (name === 'run_command') tagText = `\n[RUN:${args.command}]\n`
+                    else if (name === 'read_file') tagText = `\n[READ:${args.path}]\n`
+                    else if (name === 'edit_file') tagText = `\n[EDIT:${args.path}]\n<<<< SEARCH\n${args.search}\n====\n${args.replace}\n>>>> REPLACE\n[/EDIT]\n`
+                    else if (name === 'create_file') tagText = `\n[FILE:${args.path}]\n${args.content}\n[/FILE]\n`
+                    else if (name === 'delete_file') tagText = `\n[DELETE:${args.path}]\n`
+
+                    if (tagText) {
+                      accumulated += tagText
+                    }
+                  } catch (e) {
+                    console.warn('[useChat] Failed to parse native tool call:', e)
+                  }
+                  return
+                }
+
                 if (payload.chunk) {
                   accumulated += payload.chunk
 

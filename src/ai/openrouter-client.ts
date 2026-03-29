@@ -20,6 +20,8 @@ import type {
 } from './types';
 import { getModel } from './models';
 import { getPreset } from './presets';
+import { AGENT_TOOLS, TOOL_CALL_SENTINEL } from './tool-definitions';
+import type { ToolCallData } from './tool-definitions';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -342,18 +344,59 @@ export class OpenRouterClient implements IAIClient {
           messages: [...messages],
           max_tokens: request.maxTokens ?? DEFAULT_MAX_TOKENS,
           stream: true,
-          timeout: 120000, // 2 minute timeout for stream setup
+          timeout: 120000,
+          tools: [...AGENT_TOOLS],
+          tool_choice: 'auto',
           ...this.getProviderBody(),
         });
+
+        // Track tool call accumulation across streaming chunks
+        const toolCallBuffers = new Map<number, { name: string; args: string }>();
 
         // Connection succeeded — stream in real-time (no more retries possible)
         for await (const chunk of stream as AsyncIterable<OpenAI.Chat.Completions.ChatCompletionChunk>) {
           const choice = chunk.choices[0];
+
+          // Handle text content delta
           const delta = choice?.delta?.content;
           if (delta) {
             yield delta;
           }
-          if (choice?.finish_reason && choice.finish_reason !== 'stop') {
+
+          // Handle tool call deltas (streaming tool calls arrive in pieces)
+          const toolCalls = (choice?.delta as any)?.tool_calls;
+          if (toolCalls) {
+            for (const tc of toolCalls) {
+              const idx = tc.index ?? 0;
+              if (tc.function?.name) {
+                // New tool call starting
+                toolCallBuffers.set(idx, { name: tc.function.name, args: '' });
+              }
+              if (tc.function?.arguments) {
+                const buf = toolCallBuffers.get(idx);
+                if (buf) {
+                  buf.args += tc.function.arguments;
+                }
+              }
+            }
+          }
+
+          // On finish, emit completed tool calls
+          if (choice?.finish_reason === 'tool_calls' || choice?.finish_reason === 'stop') {
+            for (const [, buf] of toolCallBuffers) {
+              try {
+                const args = JSON.parse(buf.args || '{}');
+                const toolData: ToolCallData = { name: buf.name, arguments: args };
+                yield `${TOOL_CALL_SENTINEL}${JSON.stringify(toolData)}`;
+                console.log(`[OpenRouter] Tool call: ${buf.name}(${JSON.stringify(args)})`);
+              } catch {
+                console.warn(`[OpenRouter] Failed to parse tool call args: ${buf.args}`);
+              }
+            }
+            toolCallBuffers.clear();
+          }
+
+          if (choice?.finish_reason && choice.finish_reason !== 'stop' && choice.finish_reason !== 'tool_calls') {
             console.warn(`[OpenRouter] Stream ended with finish_reason: ${choice.finish_reason}`);
           }
           const usage = (chunk as any).usage;
