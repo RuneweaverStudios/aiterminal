@@ -79,6 +79,12 @@ const electronAPI: ElectronAPI = {
   getActiveAiModel: (taskType?: string) =>
     ipcRenderer.invoke('get-active-ai-model', taskType),
 
+  setAiPreset: (presetName: string) =>
+    ipcRenderer.invoke('ai-set-preset', presetName),
+
+  getAiPresets: () =>
+    ipcRenderer.invoke('ai-get-presets'),
+
   aiQueryStream: (request, onChunk) => {
     const requestId = globalThis.crypto.randomUUID();
     const handler = (

@@ -318,6 +318,42 @@ export function setupAllHandlers(
     }
   });
 
+  ipc.handle('ai-set-preset', (_event, presetName: string) => {
+    try {
+      aiClient.setPreset(presetName);
+      const m = aiClient.getActiveModel('general' as TaskType);
+      return {
+        success: true,
+        presetName,
+        activeModel: { id: m.id, displayName: m.name },
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error',
+      };
+    }
+  });
+
+  ipc.handle('ai-get-presets', async () => {
+    try {
+      const { PRESETS } = await import('../ai/presets.js');
+      const presets = Array.from(PRESETS.entries() as IterableIterator<[string, any]>).map(([name, preset]: [string, any]) => ({
+        name,
+        description: preset.description,
+        models: {
+          commandHelper: preset.commandHelper,
+          codeExplainer: preset.codeExplainer,
+          generalAssistant: preset.generalAssistant,
+          errorAnalyzer: preset.errorAnalyzer,
+        },
+      }));
+      return { success: true, presets, activePreset: aiClient.getActivePresetName() };
+    } catch (error) {
+      return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+    }
+  });
+
   ipc.handle('ai-query-stream', async (event, request: AIQueryStreamRequest) => {
     const { requestId, prompt, taskType, context, modelOverride } = request;
     const send = (payload: {

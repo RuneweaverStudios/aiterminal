@@ -105,6 +105,19 @@ export interface ElectronAPI {
   aiQuery: (request: AIQueryRequest) => Promise<AIResponse>;
   /** Which model would handle this task (e.g. chat uses `general`). */
   getActiveAiModel: (taskType?: string) => Promise<ActiveAiModelInfo>;
+  /** Switch the active preset (speed, balanced, performance, budget). */
+  setAiPreset: (presetName: string) => Promise<{ success: boolean; presetName?: string; error?: string }>;
+  /** Get all available presets and which is active. */
+  getAiPresets: () => Promise<{
+    success: boolean;
+    presets?: Array<{
+      name: string;
+      description: string;
+      models: Record<string, string>;
+    }>;
+    activePreset?: string;
+    error?: string;
+  }>;
   /** Streams assistant tokens from the main process OpenRouter client. */
   aiQueryStream: (
     request: AIQueryRequest,

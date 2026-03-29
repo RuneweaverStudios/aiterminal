@@ -33,6 +33,7 @@ import { useBackendSelector } from '@/renderer/hooks/useBackendSelector'
 import { TerminalView } from '@/renderer/components/TerminalView'
 import type { TerminalViewRef } from '@/renderer/components/TerminalView'
 import { CmdKBar } from '@/renderer/components/CmdKBar'
+import { PresetSwitcher } from '@/renderer/components/PresetSwitcher'
 import { ThemeSelector } from '@/renderer/components/ThemeSelector'
 import { ClaudeCodeChat } from '@/renderer/components/ClaudeCodeChat'
 import { AutocompleteDropdown } from '@/renderer/components/AutocompleteDropdown'
@@ -1143,21 +1144,10 @@ export const App: FC = () => {
         <div className="statusbar__item">
           <span>{activeTheme.displayName}</span>
         </div>
-        {chat.state.activeModelLabel && (
-          <>
-            <div className="statusbar__separator" />
-            <div
-              className="statusbar__item"
-              title={
-                chat.state.activeModelId
-                  ? `Model: ${chat.state.activeModelId}`
-                  : undefined
-              }
-            >
-              <span style={{ opacity: 0.9 }}>{chat.state.activeModelLabel}</span>
-            </div>
-          </>
-        )}
+        <div className="statusbar__separator" />
+        <div className="statusbar__item">
+          <PresetSwitcher />
+        </div>
         <div className="statusbar__separator" />
         <div className="statusbar__item">
           <span
