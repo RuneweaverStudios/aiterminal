@@ -109,11 +109,11 @@ describe('OpenRouterClient — getActiveModel', () => {
     expect(model.id).toBe('google/gemini-2.5-pro-preview-03-25');
   });
 
-  it('"budget" preset + "error_analysis" returns Nemotron Super', () => {
+  it('"budget" preset + "error_analysis" returns QWen3 Coder Next', () => {
     const client = new OpenRouterClient(makeConfig({ activePreset: 'budget' }));
     const model = client.getActiveModel('error_analysis');
-    expect(model.name).toBe('Nemotron Super 120B');
-    expect(model.id).toBe('nvidia/nemotron-3-super-120b-a12b:free');
+    expect(model.name).toBe('QWen3 Coder Next');
+    expect(model.id).toBe('qwen/qwen3-coder-next');
   });
 });
 
@@ -145,8 +145,8 @@ describe('OpenRouterClient — setPreset', () => {
     expect(client.getActiveModel('command_help').name).toBe('QWen3 Coder Next');
 
     client.setPreset('budget');
-    // budget → command_help = Nemotron Nano
-    expect(client.getActiveModel('command_help').name).toBe('Nemotron Nano 30B');
+    // budget → command_help = GLM-4.5 Air
+    expect(client.getActiveModel('command_help').name).toBe('GLM-4.5 Air');
   });
 });
 
@@ -272,7 +272,7 @@ describe('resolveModelForTask', () => {
 
   it('error_analysis maps to errorAnalyzer field', () => {
     const modelId = resolveModelForTask('error_analysis', 'budget');
-    expect(modelId).toBe('nvidia/nemotron-3-super-120b-a12b:free');
+    expect(modelId).toBe('qwen/qwen3-coder-next');
   });
 
   it('falls back to generalAssistant for unknown task types', () => {

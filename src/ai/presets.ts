@@ -13,40 +13,43 @@ import type { RouterPreset } from './types';
 
 const balanced: RouterPreset = {
   name: 'balanced',
-  description: 'QWen3 Coder Next — auto-escalates to Claude Sonnet for complex tasks.',
+  description: 'QWen3 Coder Next for all tasks.',
   commandHelper: 'qwen/qwen3-coder-next',
   codeExplainer: 'qwen/qwen3-coder-next',
   generalAssistant: 'qwen/qwen3-coder-next',
   errorAnalyzer: 'qwen/qwen3-coder-next',
-  escalationModel: 'anthropic/claude-sonnet-4-20250514',
 };
 
 const performance: RouterPreset = {
   name: 'performance',
-  description: 'Best available model for every task — highest quality regardless of cost.',
+  description: 'Best available — escalates to Claude Sonnet for complex tasks.',
   commandHelper: 'openai/gpt-4o-2024-11-20',
-  codeExplainer: 'anthropic/claude-sonnet-4-20250514',
+  codeExplainer: 'qwen/qwen3-coder-next',
   generalAssistant: 'google/gemini-2.5-pro-preview-03-25',
-  errorAnalyzer: 'anthropic/claude-sonnet-4-20250514',
+  errorAnalyzer: 'qwen/qwen3-coder-next',
+  escalationModel: 'anthropic/claude-sonnet-4-20250514',
 };
+
+// Note: errorAnalyzer is qwen3-coder-next across ALL presets
 
 const budget: RouterPreset = {
   name: 'budget',
-  description: 'Free Nemotron models — escalates to Super 120B for complex tasks.',
-  commandHelper: 'nvidia/nemotron-3-nano-30b-a3b:free',
+  description: 'Free models — escalates to QWen3 Coder for complex tasks.',
+  commandHelper: 'z-ai/glm-4.5-air:free',
   codeExplainer: 'nvidia/nemotron-3-super-120b-a12b:free',
-  generalAssistant: 'nvidia/nemotron-3-nano-30b-a3b:free',
-  errorAnalyzer: 'nvidia/nemotron-3-super-120b-a12b:free',
-  escalationModel: 'nvidia/nemotron-3-super-120b-a12b:free',
+  generalAssistant: 'z-ai/glm-4.5-air:free',
+  errorAnalyzer: 'qwen/qwen3-coder-next',
+  escalationModel: 'qwen/qwen3-coder-next',
 };
 
 const speed: RouterPreset = {
   name: 'speed',
-  description: 'Fastest responses with streaming — optimized for real-time voice chat.',
+  description: 'Fastest responses — escalates to QWen3 Coder for complex tasks.',
   commandHelper: 'google/gemini-2.0-flash-exp',
   codeExplainer: 'openai/gpt-4o-2024-11-20',
   generalAssistant: 'google/gemini-2.0-flash-exp',
-  errorAnalyzer: 'openai/gpt-4o-mini-2024-07-18',
+  errorAnalyzer: 'qwen/qwen3-coder-next',
+  escalationModel: 'qwen/qwen3-coder-next',
 };
 
 // ---------------------------------------------------------------------------

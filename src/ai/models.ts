@@ -132,6 +132,16 @@ const qwen3CoderNext: ModelConfig = {
   contextWindow: 131_072,
 };
 
+const glm45Air: ModelConfig = {
+  id: 'z-ai/glm-4.5-air:free',
+  name: 'GLM-4.5 Air',
+  provider: 'z-ai',
+  inputCostPer1M: 0,
+  outputCostPer1M: 0,
+  maxTokens: 8192,
+  contextWindow: 131_072,
+};
+
 // ---------------------------------------------------------------------------
 // Exported registry  (keyed by OpenRouter model ID)
 // ---------------------------------------------------------------------------
@@ -149,6 +159,7 @@ export const MODELS: ReadonlyMap<string, ModelConfig> = new Map<string, ModelCon
   [nemotronNano.id, nemotronNano],
   [nemotronSuper.id, nemotronSuper],
   [qwen3CoderNext.id, qwen3CoderNext],
+  [glm45Air.id, glm45Air],
 ]);
 
 /**
