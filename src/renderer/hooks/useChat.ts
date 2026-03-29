@@ -403,8 +403,8 @@ export function useChat(): UseChatReturn {
 
           const applyRunTags = (raw: string): string => {
             let text = raw
-            // Extract all [RUN] commands — forgiving regex: closing ] is optional
-            const runRegex = /\[RUN\](.*?)\[\/RUN\]?/gs
+            // Extract [RUN] commands — very forgiving: handles [/RUN], [/RUN, [/, or end of string
+            const runRegex = /\[RUN\](.*?)(?:\[\/(?:RUN\]?)?|$)/gs
             const commands: string[] = []
             let match: RegExpExecArray | null
             while ((match = runRegex.exec(text)) !== null) {
@@ -412,8 +412,8 @@ export function useChat(): UseChatReturn {
             }
             if (commands.length === 0) return text
 
-            // Strip tags from display (forgiving pattern)
-            text = text.replace(/\[RUN\].*?\[\/RUN\]?/gs, '').trim()
+            // Strip tags from display (very forgiving pattern)
+            text = text.replace(/\[RUN\].*?(?:\[\/(?:RUN\]?)?|$)/gs, '').trim()
 
             if (chatMode === 'autocode') {
               // AUTOCODE: execute commands in the active terminal and capture output
@@ -507,7 +507,7 @@ export function useChat(): UseChatReturn {
 
                   // Strip raw tool tags during streaming so they don't flash
                   const displayText = accumulated
-                    .replace(/\[RUN\].*?\[\/RUN\]?/gs, '')
+                    .replace(/\[RUN\].*?(?:\[\/(?:RUN\]?)?|$)/gs, '')
                     .replace(/\[FILE:[^\]]*\][\s\S]*?\[\/FILE\]/g, '')
                     .replace(/\[EDIT:[^\]]*\][\s\S]*?\[\/EDIT\]/g, '')
                     .replace(/\[DELETE:[^\]]*\]/g, '')
