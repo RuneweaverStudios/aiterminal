@@ -610,8 +610,8 @@ export function useChat(): UseChatReturn {
       const modePrefix = chatMode === 'plan'
         ? '[PLAN MODE] Describe what changes you would make and why, but do NOT use [FILE], [EDIT], or [DELETE] tags. Only analyze and explain your plan.\n\n'
         : chatMode === 'autocode'
-        ? '[AUTOCODE MODE] You have full autonomy. ALWAYS start your response with a brief one-line statement of what you are about to do, THEN use tool tags. Example: "Running the test suite." followed by [RUN:cargo test]. Use [READ:path] to read files, [EDIT:path] to fix code, [RUN:command] to execute commands. Act immediately without asking permission. Never say "you should" — just do it.\n\n'
-        : 'ALWAYS start with a brief statement of what you are doing, THEN use tool tags. Read files with [READ:path], run commands with [RUN:command] (e.g. [RUN:ls], [RUN:npm test]), edit files with [EDIT:path]. Act proactively.\n\n'
+        ? '[AUTOCODE MODE] You have full autonomy. ALWAYS start your response with a brief one-line statement, THEN use tool tags.\n\nCRITICAL: Tool tags MUST appear OUTSIDE any <think> blocks. Do NOT put [RUN:], [READ:], or [EDIT:] inside <think> tags — they will not execute.\n\nExample response:\nRunning the test suite.\n[RUN:pytest -v]\n\nUse [READ:path] to read files, [EDIT:path] to fix code, [RUN:command] to execute. Act immediately. Never describe — execute.\n\n'
+        : 'ALWAYS start with a brief statement of what you are doing, THEN use tool tags.\n\nCRITICAL: Tool tags MUST appear OUTSIDE any <think> blocks. Put [RUN:command], [READ:path], [EDIT:path] tags in your visible response, not inside reasoning.\n\n'
 
       const allContext = [persistentFiles, fileContext].filter(Boolean).join('\n\n')
       const fullPrompt = modePrefix + (allContext
