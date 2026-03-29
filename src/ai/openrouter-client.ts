@@ -241,16 +241,10 @@ export class OpenRouterClient implements IAIClient {
       request.prompt,
     );
 
-    // Collect all chunks via retry loop, then yield them.
-    // Retrying inside an async generator is not possible after the first yield,
-    // so we buffer the full stream before yielding any output.
-    let chunks: string[] = [];
-    let lastError: unknown;
-
+    // Retry only on connection/setup errors (before streaming starts).
+    // Once streaming begins, yield chunks in real-time for responsive UX.
     for (let attempt = 0; attempt <= RETRY_DELAYS_MS.length; attempt++) {
       try {
-        chunks = [];
-
         const stream = await this.openai.chat.completions.create({
           model: modelId,
           messages: [...messages],
@@ -258,26 +252,22 @@ export class OpenRouterClient implements IAIClient {
           stream: true,
         });
 
+        // Connection succeeded — stream in real-time (no more retries possible)
         for await (const chunk of stream as AsyncIterable<OpenAI.Chat.Completions.ChatCompletionChunk>) {
           const choice = chunk.choices[0];
           const delta = choice?.delta?.content;
           if (delta) {
-            chunks.push(delta);
+            yield delta;
           }
-          // Log if stream ended for unexpected reasons
           if (choice?.finish_reason && choice.finish_reason !== 'stop') {
             console.warn(`[OpenRouter] Stream ended with finish_reason: ${choice.finish_reason}`);
           }
-          // Capture usage from final chunk (OpenRouter includes it)
           const usage = (chunk as any).usage;
           if (usage) {
-            chunks.push(`\x00USAGE:${JSON.stringify(usage)}`);
+            yield `\x00USAGE:${JSON.stringify(usage)}`;
           }
         }
-
-        // Stream completed successfully — break out of retry loop.
-        lastError = undefined;
-        break;
+        return; // Stream completed successfully
       } catch (error: unknown) {
         const status =
           error instanceof Error && 'status' in error
@@ -286,36 +276,19 @@ export class OpenRouterClient implements IAIClient {
 
         const isRetryable = status !== undefined && RETRYABLE_STATUS_CODES.has(status);
 
-        if (!isRetryable) {
-          // Non-retryable error (e.g. 400, 401, 403) — fail immediately.
+        if (!isRetryable || attempt >= RETRY_DELAYS_MS.length) {
           const errorMessage =
             error instanceof Error ? error.message : 'Stream error occurred.';
           yield `Error: ${errorMessage}`;
           return;
         }
 
-        lastError = error;
-
-        if (attempt < RETRY_DELAYS_MS.length) {
-          const delayMs = RETRY_DELAYS_MS[attempt];
-          console.warn(
-            `[OpenRouter] Retryable error (status ${status}), attempt ${attempt + 1}/${RETRY_DELAYS_MS.length}. Retrying in ${delayMs}ms…`,
-          );
-          await new Promise<void>((resolve) => setTimeout(resolve, delayMs));
-        }
+        const delayMs = RETRY_DELAYS_MS[attempt];
+        console.warn(
+          `[OpenRouter] Retryable error (status ${status}), attempt ${attempt + 1}/${RETRY_DELAYS_MS.length}. Retrying in ${delayMs}ms…`,
+        );
+        await new Promise<void>((resolve) => setTimeout(resolve, delayMs));
       }
-    }
-
-    if (lastError !== undefined) {
-      // All retries exhausted.
-      const errorMessage =
-        lastError instanceof Error ? lastError.message : 'Stream error occurred.';
-      yield `Error: ${errorMessage}`;
-      return;
-    }
-
-    for (const chunk of chunks) {
-      yield chunk;
     }
   }
 }

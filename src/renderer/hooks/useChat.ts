@@ -412,9 +412,11 @@ export function useChat(): UseChatReturn {
         .map((f) => `[File: ${f.name}]\n${f.content}`)
         .join('\n\n')
 
-      // Persistent file context — files previously read that may have fallen out of message window
-      const persistentFiles = Array.from(fileContextRef.current.entries())
-        .map(([path, content]) => `[Previously read: ${path}]\n${content}`)
+      // Persistent file context — keep only last 3 files to avoid blowing up prompt on small models
+      const fileEntries = Array.from(fileContextRef.current.entries())
+      const recentFiles = fileEntries.slice(-3)
+      const persistentFiles = recentFiles
+        .map(([path, content]) => `[Previously read: ${path}]\n${content.slice(0, 2000)}`)
         .join('\n\n')
 
       // Apply mode prefix
