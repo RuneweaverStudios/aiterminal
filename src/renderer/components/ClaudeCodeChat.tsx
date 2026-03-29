@@ -318,7 +318,15 @@ export const ClaudeCodeChat: React.FC<ClaudeCodeChatProps> = ({
               ...(msg.role === 'assistant' ? styles.messageRight : styles.messageLeft)
             }}
           >
-            {msg.role === 'assistant' && (
+            {msg.role === 'assistant' && (() => {
+              // Only show full header (SORA • model) on the first assistant message
+              // or when model changes. Subsequent messages get a minimal bullet.
+              const allMsgs = backend === 'claude-code' ? localMessages : messages
+              const prevMsg = idx > 0 ? allMsgs[idx - 1] : null
+              const isFirstOrModelChange = !prevMsg || prevMsg.role === 'user' ||
+                (msg as { model?: string }).model !== (prevMsg as { model?: string }).model
+              return isFirstOrModelChange
+            })() && (
               <div style={styles.messageMeta}>
                 <span style={styles.aiName}>{activeIntern ? activeIntern.toUpperCase() : 'MEI'}</span>
                 <span style={styles.aiModel}>•</span>

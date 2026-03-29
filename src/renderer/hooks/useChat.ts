@@ -1051,10 +1051,13 @@ export function useChat(): UseChatReturn {
                 }
               }
 
-              // Autocode agent loop: continue if ANY operations were performed (read, write, or run)
+              // Autocode agent loop: continue if ANY operations were performed
               const hasAnyOps = operations.length > 0
               const hasRunOps = accumulated.includes('[RUN]') || accumulated.includes('[RUN:')
               const hasPartialTag = /\[(?:READ|EDIT|RUN|FILE)(?::|\s*$)/m.test(accumulated)
+              // Native tool calls already triggered async results via pendingSendRef —
+              // DON'T also trigger continuation here, let the async results drive the loop
+              const shouldContinue = !hadNativeToolCalls && (hasAnyOps || hasRunOps || hasPartialTag)
 
               console.log('[AgentLoop] Continuation check:', {
                 chatMode,
@@ -1062,10 +1065,11 @@ export function useChat(): UseChatReturn {
                 hasAnyOps,
                 hasRunOps,
                 hasPartialTag,
-                willContinue: chatMode === 'autocode' && agentLoopActiveRef.current && (hasAnyOps || hasRunOps || hasPartialTag),
+                hadNativeToolCalls,
+                shouldContinue,
               })
 
-              if (chatMode === 'autocode' && agentLoopActiveRef.current && (hasAnyOps || hasRunOps || hasPartialTag)) {
+              if (chatMode === 'autocode' && agentLoopActiveRef.current && shouldContinue) {
                 agentLoopIterationsRef.current++
                 if (agentLoopIterationsRef.current < MAX_AGENT_ITERATIONS) {
                   // Brief delay then continue
