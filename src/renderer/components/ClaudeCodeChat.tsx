@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import ReactMarkdown from 'react-markdown';
 import { InlineFileOpsApproval } from './InlineFileOpsApproval';
+import { renderToolCalls } from './ToolCallDisplay';
 import type { FileOperation } from '../../types/agent';
 import type { ChatMode } from '../../types/chat';
 import '../styles/components.css';
@@ -260,27 +261,68 @@ export const ClaudeCodeChat: React.FC<ClaudeCodeChatProps> = ({
             )}
             <div style={styles.messageBubble}>
               <div style={styles.messageContent}>
-                <div style={styles.markdownWrapper}>
-                  <ReactMarkdown
-                    components={{
-                      code: ({children, className}: any) => {
-                        const isBlock = className?.includes('language-');
-                        return (
-                          <code style={isBlock ? styles.markdownCodeBlock : styles.markdownInlineCode}>
-                            {children}
-                          </code>
-                        );
-                      },
-                      p: ({children}: any) => <p style={styles.markdownParagraph}>{children}</p>,
-                      ul: ({children}: any) => <ul style={{margin: '0 0 8px 0', paddingLeft: '16px'}}>{children}</ul>,
-                      ol: ({children}: any) => <ol style={{margin: '0 0 8px 0', paddingLeft: '16px'}}>{children}</ol>,
-                      li: ({children}: any) => <li style={{marginBottom: '2px'}}>{children}</li>,
-                      strong: ({children}: any) => <strong style={{fontWeight: 600}}>{children}</strong>,
-                    }}
-                  >
-                    {msg.content}
-                  </ReactMarkdown>
-                </div>
+                {(() => {
+                  // Extract tool calls for assistant messages
+                  if (msg.role === 'assistant') {
+                    const { cleanText, toolCalls } = renderToolCalls(msg.content);
+                    return (
+                      <>
+                        {toolCalls.length > 0 && (
+                          <div style={{ marginBottom: toolCalls.length > 0 && cleanText ? '8px' : 0 }}>
+                            {toolCalls}
+                          </div>
+                        )}
+                        {cleanText && (
+                          <div style={styles.markdownWrapper}>
+                            <ReactMarkdown
+                              components={{
+                                code: ({children, className}: any) => {
+                                  const isBlock = className?.includes('language-');
+                                  return (
+                                    <code style={isBlock ? styles.markdownCodeBlock : styles.markdownInlineCode}>
+                                      {children}
+                                    </code>
+                                  );
+                                },
+                                p: ({children}: any) => <p style={styles.markdownParagraph}>{children}</p>,
+                                ul: ({children}: any) => <ul style={{margin: '0 0 8px 0', paddingLeft: '16px'}}>{children}</ul>,
+                                ol: ({children}: any) => <ol style={{margin: '0 0 8px 0', paddingLeft: '16px'}}>{children}</ol>,
+                                li: ({children}: any) => <li style={{marginBottom: '2px'}}>{children}</li>,
+                                strong: ({children}: any) => <strong style={{fontWeight: 600}}>{children}</strong>,
+                              }}
+                            >
+                              {cleanText}
+                            </ReactMarkdown>
+                          </div>
+                        )}
+                      </>
+                    );
+                  }
+                  // User messages — plain markdown
+                  return (
+                    <div style={styles.markdownWrapper}>
+                      <ReactMarkdown
+                        components={{
+                          code: ({children, className}: any) => {
+                            const isBlock = className?.includes('language-');
+                            return (
+                              <code style={isBlock ? styles.markdownCodeBlock : styles.markdownInlineCode}>
+                                {children}
+                              </code>
+                            );
+                          },
+                          p: ({children}: any) => <p style={styles.markdownParagraph}>{children}</p>,
+                          ul: ({children}: any) => <ul style={{margin: '0 0 8px 0', paddingLeft: '16px'}}>{children}</ul>,
+                          ol: ({children}: any) => <ol style={{margin: '0 0 8px 0', paddingLeft: '16px'}}>{children}</ol>,
+                          li: ({children}: any) => <li style={{marginBottom: '2px'}}>{children}</li>,
+                          strong: ({children}: any) => <strong style={{fontWeight: 600}}>{children}</strong>,
+                        }}
+                      >
+                        {msg.content}
+                      </ReactMarkdown>
+                    </div>
+                  );
+                })()}
               </div>
             </div>
           </div>
