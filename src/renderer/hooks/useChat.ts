@@ -759,7 +759,7 @@ export function useChat(): UseChatReturn {
                     nativeToolCalls.push(tc)
                     console.log('[useChat] Native tool call received:', tc.name, tc.arguments)
 
-                    // Convert to text tag format for display + existing processing pipeline
+                    // Convert to text tag format for the existing pipeline
                     const { name, arguments: args } = tc
                     let tagText = ''
                     if (name === 'run_command') tagText = `\n[RUN:${args.command}]\n`
@@ -770,6 +770,36 @@ export function useChat(): UseChatReturn {
 
                     if (tagText) {
                       accumulated += tagText
+                    }
+
+                    // Execute tool calls immediately and queue results for the next turn
+                    // This is how proper function calling works — model gets results back
+                    if (name === 'read_file' && args.path) {
+                      window.electronAPI?.readFile?.(args.path).then((result: { content?: string; error?: string }) => {
+                        if (result.content) {
+                          fileContextRef.current.set(args.path, result.content.slice(0, 5000))
+                          const lines = result.content.split('\n').length
+                          const preview = result.content.slice(0, 2000)
+                          // Feed file content back to the model as a continuation
+                          if (agentLoopActiveRef.current) {
+                            pendingSendRef.current?.(`File ${args.path} (${lines} lines):\n\`\`\`\n${preview}\n\`\`\`\nAnalyze this file and continue with the next step.`)
+                          }
+                        }
+                      }).catch(() => {})
+                    }
+                    if (name === 'run_command' && args.command) {
+                      const sessionId = getAgentLoopState().activeSessionId
+                      if (sessionId && window.electronAPI?.writeToSession) {
+                        window.electronAPI.writeToSession(sessionId, args.command + '\r')
+                        capturePtyOutput(sessionId, args.command, 15000).then(output => {
+                          if (output.trim().length > 0) {
+                            const important = extractImportantOutput(output, args.command)
+                            if (important.length > 0 && agentLoopActiveRef.current) {
+                              pendingSendRef.current?.(`Output from \`${args.command}\`:\n\`\`\`\n${important}\n\`\`\`\nBriefly note the result, then continue.`)
+                            }
+                          }
+                        })
+                      }
                     }
                   } catch (e) {
                     console.warn('[useChat] Failed to parse native tool call:', e)
