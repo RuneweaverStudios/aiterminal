@@ -65,7 +65,7 @@ export function parseAgentResponse(
     })
   }
 
-  // Parse [EDIT:path]...[/EDIT] tags
+  // Parse [EDIT:path]...[/EDIT] tags — supports both full replacement and search/replace
   const editRegex = /\[EDIT:([^\]]+)\]([\s\S]*?)\[\/EDIT\]/g
 
   while ((match = editRegex.exec(aiContent)) !== null) {
@@ -74,14 +74,31 @@ export function parseAgentResponse(
 
     if (filePath.length === 0) continue
 
-    operations.push({
-      id: generateId('op'),
-      type: 'edit',
-      filePath,
-      content,
-      description: `Edit ${filePath}`,
-      status: 'pending',
-    })
+    // Check for search/replace syntax: <<<< SEARCH ... ==== ... >>>> REPLACE
+    const srMatch = content.match(/<<<<?[\t ]*SEARCH\n([\s\S]*?)\n====([\s\S]*?)\n>>>>?[\t ]*REPLACE/)
+    if (srMatch) {
+      const searchText = srMatch[1]
+      const replaceText = srMatch[2].startsWith('\n') ? srMatch[2].slice(1) : srMatch[2]
+      operations.push({
+        id: generateId('op'),
+        type: 'edit',
+        filePath,
+        searchText,
+        replaceText,
+        description: `Edit ${filePath}`,
+        status: 'pending',
+      })
+    } else {
+      // Full file replacement
+      operations.push({
+        id: generateId('op'),
+        type: 'edit',
+        filePath,
+        content,
+        description: `Edit ${filePath}`,
+        status: 'pending',
+      })
+    }
   }
 
   // Parse [READ:path] tags (AI requesting to read a file)
@@ -250,9 +267,27 @@ export async function applyOperation(
 
     switch (op.type) {
       case 'create':
-      case 'edit':
         await api.writeFile(op.filePath, op.content ?? '')
         return { success: true }
+
+      case 'edit': {
+        if (op.searchText != null && op.replaceText != null) {
+          // Search/replace edit — read file, find, replace, write
+          const existing = await api.readFile(op.filePath)
+          if (existing.error || existing.content == null) {
+            return { success: false, error: existing.error || 'File not found' }
+          }
+          if (!existing.content.includes(op.searchText)) {
+            return { success: false, error: 'Search text not found in file' }
+          }
+          const updated = existing.content.replace(op.searchText, op.replaceText)
+          await api.writeFile(op.filePath, updated)
+          return { success: true }
+        }
+        // Full replacement
+        await api.writeFile(op.filePath, op.content ?? '')
+        return { success: true }
+      }
 
       case 'delete':
         await api.deleteFile(op.filePath)

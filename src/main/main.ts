@@ -89,9 +89,18 @@ Create a new file:
 file content here
 [/FILE]
 
-Edit an existing file (provide complete updated content):
+Edit an existing file (search/replace — preferred):
 [EDIT:path/to/file.ts]
-updated content here
+<<<< SEARCH
+exact code to find
+====
+replacement code
+>>>> REPLACE
+[/EDIT]
+
+Edit (full replacement — small files or complete rewrites only):
+[EDIT:path/to/file.ts]
+full new content
 [/EDIT]
 
 Read a file to understand its contents:

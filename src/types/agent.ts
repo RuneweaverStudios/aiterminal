@@ -11,8 +11,10 @@ export interface FileOperation {
   readonly id: string
   readonly type: 'create' | 'edit' | 'delete' | 'read'
   readonly filePath: string
-  readonly content?: string          // new content (create/edit)
-  readonly originalContent?: string  // for showing diffs (edit)
+  readonly content?: string          // new content (create/edit) or replacement text
+  readonly originalContent?: string  // original file content before edit
+  readonly searchText?: string       // search text for search/replace edits
+  readonly replaceText?: string      // replacement text for search/replace edits
   readonly description: string
   readonly status: 'pending' | 'approved' | 'rejected' | 'applied'
 }
