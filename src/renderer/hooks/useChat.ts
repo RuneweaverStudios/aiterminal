@@ -532,8 +532,9 @@ export function useChat(): UseChatReturn {
   }, [])
 
   // Internal send that skips user message bubble (for agent loop continuations)
-  const sendMessageInternal = async (content: string) => {
-    await sendMessage(content, undefined, true)
+  // Optional modelOverride forces a specific model (used for escalation)
+  const sendMessageInternal = async (content: string, modelOverride?: string) => {
+    await sendMessage(content, modelOverride, true)
   }
 
   const sendMessage = useCallback(
@@ -882,10 +883,37 @@ export function useChat(): UseChatReturn {
                     && !/\bcomplete\b|\bdone\b|\bfinished\b/i.test(accumulated)
                     && strippedContent.length > 5) {
                   agentLoopIterationsRef.current++
+
+                  // After 2 failed nudges, force-escalate to a stronger model
+                  const needsEscalation = agentLoopIterationsRef.current >= 2
+
                   if (agentLoopIterationsRef.current < MAX_AGENT_ITERATIONS) {
                     setTimeout(() => {
                       if (agentLoopActiveRef.current) {
-                        sendMessageInternal('STOP describing. ACT NOW. Use these exact tags:\n- [RUN:cargo test] to run commands\n- [READ:src/main.rs] to read files\n- [EDIT:path]content[/EDIT] to edit files\nDo NOT explain what you will do. Just do it.')
+                        if (needsEscalation) {
+                          // Escalate: use the preset's escalation model directly
+                          const api = window.electronAPI
+                          api?.getActiveAiModel?.('general').then((info: { presetName?: string }) => {
+                            const presetName = info?.presetName || 'budget'
+                            // Import getPreset to find escalation model
+                            const escalationModels: Record<string, string> = {
+                              budget: 'qwen/qwen3-coder-next',
+                              balanced: 'z-ai/glm-5',
+                              speed: 'qwen/qwen3-coder-next',
+                              performance: 'anthropic/claude-sonnet-4-20250514',
+                            }
+                            const escalationModel = escalationModels[presetName] || 'qwen/qwen3-coder-next'
+                            console.log(`[useChat] Escalating to ${escalationModel} after ${agentLoopIterationsRef.current} failed nudges`)
+                            sendMessageInternal(
+                              'The previous model could not use tool tags. You MUST use tags to act:\n- [RUN:command] to execute (e.g. [RUN:pytest])\n- [READ:path] to read files\n- [EDIT:path]content[/EDIT] to edit\nACT NOW.',
+                              escalationModel,
+                            )
+                          }).catch(() => {
+                            sendMessageInternal('ACT NOW with [RUN:command] or [READ:path] tags. Do not describe.')
+                          })
+                        } else {
+                          sendMessageInternal('STOP describing. ACT NOW. Use these exact tags:\n- [RUN:pytest] to run commands\n- [READ:main.py] to read files\nDo NOT explain. Just do it.')
+                        }
                       }
                     }, 300)
                   }
