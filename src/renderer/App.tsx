@@ -938,6 +938,13 @@ export const App: FC = () => {
                           filePath={tab.filePath}
                           content={tab.content}
                           language={tab.language}
+                          onSave={async (path, newContent) => {
+                            try {
+                              await window.electronAPI.writeFile(path, newContent)
+                            } catch (err) {
+                              console.error('[App] Failed to save file:', err)
+                            }
+                          }}
                         />
                       ) : (
                         <TerminalView
