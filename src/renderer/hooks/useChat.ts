@@ -897,13 +897,22 @@ export function useChat(): UseChatReturn {
               }
             }
 
-            // Unwrap think blocks for tag extraction — remove markers but keep content
-            // so tool tags inside <think> blocks are visible to applyRunTags/extractFileOps
-            const unwrapped = accumulated
-              .replace(/<\/?think>/g, '')
-              .replace(/<\/?thinking>/g, '')
+            // If native tool calls were used, skip text-based tag parsing entirely.
+            // The native calls already executed tools and queued results.
+            // Only strip tags from display text.
+            const hadNativeToolCalls = nativeToolCalls.length > 0
 
-            const afterRunTags = applyRunTags(unwrapped)
+            let afterRunTags: string
+            if (hadNativeToolCalls) {
+              console.log(`[useChat] ${nativeToolCalls.length} native tool calls handled — skipping text tag parsing`)
+              afterRunTags = stripAllToolTags(accumulated)
+            } else {
+              // Fallback: parse text-based tags for models that don't support function calling
+              const unwrapped = accumulated
+                .replace(/<\/?think>/g, '')
+                .replace(/<\/?thinking>/g, '')
+              afterRunTags = applyRunTags(unwrapped)
+            }
 
             // Process memory tags on think-stripped text (don't save reasoning as memories)
             const memoryText = accumulated
@@ -911,7 +920,10 @@ export function useChat(): UseChatReturn {
               .replace(/<think>[\s\S]*/g, '')
             processMemoryTags(memoryText)
 
-            const { text: finalContent, operations } = extractFileOps(afterRunTags)
+            // Skip file ops extraction if native tool calls handled everything
+            const { text: finalContent, operations } = hadNativeToolCalls
+              ? { text: afterRunTags, operations: [] as ReadonlyArray<FileOperation> }
+              : extractFileOps(afterRunTags)
             setMessages((prev) =>
               prev.map((m) =>
                 m.id === placeholderId ? { ...m, content: finalContent } : m,
@@ -969,7 +981,7 @@ export function useChat(): UseChatReturn {
               if (chatMode === 'autocode') {
                 const strippedContent = accumulated.replace(/\[.*?\]/g, '').replace(/\[\/?\w*\]?/g, '').replace(/[→←↑↓•·,\s.\[\]\/]+/g, '').trim()
                 const hasTagFragments = /\[/.test(accumulated)
-                const hasCompleteTags = operations.length > 0 || accumulated.includes('[RUN]') || accumulated.includes('[RUN:')
+                const hasCompleteTags = hadNativeToolCalls || operations.length > 0 || accumulated.includes('[RUN]') || accumulated.includes('[RUN:')
                 const isDone = /(?:task|everything|all\s+\w+\s+is)\s+(?:complete|done|finished)|^complete\.?$/im.test(accumulated)
 
                 console.log('[AgentLoop] Post-stream analysis:', {
@@ -979,6 +991,8 @@ export function useChat(): UseChatReturn {
                   strippedLen: strippedContent.length,
                   hasTagFragments,
                   hasCompleteTags,
+                  hadNativeToolCalls,
+                  nativeToolCallCount: nativeToolCalls.length,
                   isDone,
                   opsCount: operations.length,
                   first80: accumulated.slice(0, 80),
@@ -989,8 +1003,8 @@ export function useChat(): UseChatReturn {
                   agentLoopActiveRef.current = false
                 }
 
-                if (strippedContent.length === 0 && !hasTagFragments) {
-                  console.log('[AgentLoop] STOPPING — truly empty response (no text, no tags)')
+                if (strippedContent.length === 0 && !hasTagFragments && !hadNativeToolCalls) {
+                  console.log('[AgentLoop] STOPPING — truly empty response (no text, no tags, no tool calls)')
                   agentLoopActiveRef.current = false
                 }
 
