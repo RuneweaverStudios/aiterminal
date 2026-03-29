@@ -49,15 +49,69 @@ class MeiInternSession extends BaseInternSession {
       }
     } as AgentEvent);
 
-    // Spawn via dietmcp (bash tool)
+    // Spawn via dietmcp (bash tool) if available, else fallback to aiQuery
     const dietmcpBin = getDietmcpBin();
+
     if (!dietmcpBin) {
-      throw new Error('AITERMINAL_DIETMCP_BIN not set - required for Mei intern');
+      // Fallback: use aiQuery for code generation (no external agent)
+      if (!this.config.aiQuery) {
+        throw new Error('Mei requires either AITERMINAL_DIETMCP_BIN or an aiQuery function');
+      }
+
+      this.emit('event', {
+        stream: 'tool',
+        data: {
+          runId: this.config.runId,
+          toolName: 'llm_code_gen',
+          status: 'start',
+          input: { task },
+          timestamp: Date.now()
+        }
+      } as AgentEvent);
+
+      const codePrompt = `You are Mei, a senior developer intern. Complete this coding task in the workspace "${this.config.workspace}".
+
+TASK: ${task}
+
+Respond with file operations using these tags:
+[FILE:path]content[/FILE] — create a new file
+[EDIT:path]content[/EDIT] — replace a file's content
+[RUN]command[/RUN] — suggest a shell command
+[READ:path] — read a file for context
+
+Always explain what you're doing briefly, then provide the file operations.`;
+
+      const result = await this.config.aiQuery(codePrompt);
+
+      this.emit('event', {
+        stream: 'tool',
+        data: {
+          runId: this.config.runId,
+          toolName: 'llm_code_gen',
+          status: 'end',
+          timestamp: Date.now()
+        }
+      } as AgentEvent);
+
+      this.emit('event', {
+        stream: 'assistant',
+        data: {
+          runId: this.config.runId,
+          intern: 'mei',
+          text: result,
+          delta: result,
+          timestamp: Date.now()
+        }
+      } as AgentEvent);
+
+      this.addMessage('assistant', result);
+      return this.getResult();
     }
 
+    // Primary path: spawn external coding agent via dietmcp
     const args = JSON.stringify({
       command,
-      pty: agentChoice !== 'claude', // Claude Code doesn't need PTY
+      pty: agentChoice !== 'claude',
       workdir: this.config.workspace,
       background: true,
       timeout: this.config.timeout
@@ -71,7 +125,6 @@ class MeiInternSession extends BaseInternSession {
     let outputBuffer = '';
     let hasOutput = false;
 
-    // Handle stdout (streaming output)
     this.childProcess.stdout?.on('data', (data: Buffer) => {
       const text = data.toString();
       outputBuffer += text;
@@ -91,10 +144,8 @@ class MeiInternSession extends BaseInternSession {
       this.addMessage('assistant', text);
     });
 
-    // Handle stderr (errors)
     this.childProcess.stderr?.on('data', (data: Buffer) => {
       const error = data.toString();
-
       this.emit('event', {
         stream: 'error',
         data: {
@@ -107,12 +158,10 @@ class MeiInternSession extends BaseInternSession {
       } as AgentEvent);
     });
 
-    // Wait for completion
     return new Promise((resolve, reject) => {
       this.childProcess?.on('close', (code) => {
         if (code === 0 || code === null) {
           if (!hasOutput) {
-            // No output but succeeded - might be a silent agent
             this.emit('event', {
               stream: 'assistant',
               data: {

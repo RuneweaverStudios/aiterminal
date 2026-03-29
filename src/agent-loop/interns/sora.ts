@@ -207,37 +207,55 @@ class SoraInternSession extends BaseInternSession {
   }
 
   /**
-   * Synthesize research findings.
+   * Synthesize research findings using LLM if available.
    */
   private async synthesizeResearch(
     task: string,
     searchResults: Array<{ title: string; url: string; snippet: string }>,
     docs: string
   ): Promise<string> {
-    let synthesis = `# Research: ${task}\n\n`;
+    // Build raw materials
+    let rawContext = '';
+    if (searchResults.length > 0) {
+      rawContext += 'WEB SEARCH RESULTS:\n';
+      for (const result of searchResults) {
+        rawContext += `- ${result.title} (${result.url})\n  ${result.snippet}\n\n`;
+      }
+    }
+    if (docs) {
+      rawContext += `DOCUMENTATION:\n${docs}\n\n`;
+    }
 
+    // Use LLM for real synthesis if available
+    if (this.config.aiQuery && rawContext.length > 0) {
+      const synthesisPrompt = `You are Sora, a research analyst. Synthesize these findings into a clear, actionable research report.
+
+TASK: ${task}
+
+${rawContext}
+
+Write a well-structured markdown report with:
+1. Key findings (bullet points)
+2. Analysis and recommendations
+3. Sources cited
+
+Be concise and actionable. Focus on what matters for the task.`;
+
+      return await this.config.aiQuery(synthesisPrompt);
+    }
+
+    // Fallback: structured but without LLM synthesis
+    let synthesis = `# Research: ${task}\n\n`;
     if (searchResults.length > 0) {
       synthesis += `## Sources\n\n`;
       for (const result of searchResults) {
         synthesis += `- [${result.title}](${result.url})\n`;
-        if (result.snippet) {
-          synthesis += `  > ${result.snippet}\n`;
-        }
+        if (result.snippet) synthesis += `  > ${result.snippet}\n`;
         synthesis += `\n`;
       }
     }
-
-    if (docs) {
-      synthesis += `${docs}\n\n`;
-    }
-
-    synthesis += `## Summary\n\n`;
-    synthesis += `Found ${searchResults.length} relevant sources`;
-    if (docs) {
-      synthesis += ` plus documentation references`;
-    }
-    synthesis += `. Use this research to inform your work.\n`;
-
+    if (docs) synthesis += `${docs}\n\n`;
+    synthesis += `## Summary\n\nFound ${searchResults.length} relevant sources. Use this research to inform your work.\n`;
     return synthesis;
   }
 }
