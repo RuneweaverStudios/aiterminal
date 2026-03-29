@@ -86,18 +86,18 @@ describe('OpenRouterClient — getActiveModel', () => {
     vi.clearAllMocks();
   });
 
-  it('"balanced" preset + "command_help" returns GPT-4o Mini', () => {
+  it('"balanced" preset + "command_help" returns QWen3 Coder Next', () => {
     const client = new OpenRouterClient(makeConfig({ activePreset: 'balanced' }));
     const model = client.getActiveModel('command_help');
-    expect(model.name).toBe('GPT-4o Mini');
-    expect(model.id).toBe('openai/gpt-4o-mini-2024-07-18');
+    expect(model.name).toBe('QWen3 Coder Next');
+    expect(model.id).toBe('qwen/qwen3-coder-next');
   });
 
-  it('"balanced" preset + "code_explain" returns Claude Sonnet 4', () => {
+  it('"balanced" preset + "code_explain" returns QWen3 Coder Next', () => {
     const client = new OpenRouterClient(makeConfig({ activePreset: 'balanced' }));
     const model = client.getActiveModel('code_explain');
-    expect(model.name).toBe('Claude Sonnet 4');
-    expect(model.id).toBe('anthropic/claude-sonnet-4-20250514');
+    expect(model.name).toBe('QWen3 Coder Next');
+    expect(model.id).toBe('qwen/qwen3-coder-next');
   });
 
   it('"performance" preset + "general" returns Gemini 2.5 Pro', () => {
@@ -141,8 +141,8 @@ describe('OpenRouterClient — setPreset', () => {
 
   it('after switching, getActiveModel returns models from new preset', () => {
     const client = new OpenRouterClient(makeConfig({ activePreset: 'balanced' }));
-    // balanced → command_help = GPT-4o Mini
-    expect(client.getActiveModel('command_help').name).toBe('GPT-4o Mini');
+    // balanced → command_help = QWen3 Coder Next
+    expect(client.getActiveModel('command_help').name).toBe('QWen3 Coder Next');
 
     client.setPreset('budget');
     // budget → command_help = Nemotron Nano
@@ -163,7 +163,7 @@ describe('OpenRouterClient — query', () => {
     mockCreate.mockResolvedValueOnce({
       choices: [{ message: { content: 'Use `ls`.' } }],
       usage: { prompt_tokens: 10, completion_tokens: 5 },
-      model: 'openai/gpt-4o-mini-2024-07-18',
+      model: 'qwen/qwen3-coder-next',
     });
 
     const client = new OpenRouterClient(makeConfig());
@@ -171,14 +171,14 @@ describe('OpenRouterClient — query', () => {
 
     expect(mockCreate).toHaveBeenCalledOnce();
     const callArgs = mockCreate.mock.calls[0][0];
-    expect(callArgs.model).toBe('openai/gpt-4o-mini-2024-07-18');
+    expect(callArgs.model).toBe('qwen/qwen3-coder-next');
   });
 
   it('includes system prompt in messages', async () => {
     mockCreate.mockResolvedValueOnce({
       choices: [{ message: { content: 'Hello!' } }],
       usage: { prompt_tokens: 10, completion_tokens: 3 },
-      model: 'openai/gpt-4o-mini-2024-07-18',
+      model: 'qwen/qwen3-coder-next',
     });
 
     const systemPrompt = 'You are a terminal AI.';
@@ -197,14 +197,14 @@ describe('OpenRouterClient — query', () => {
     mockCreate.mockResolvedValueOnce({
       choices: [{ message: { content: 'Run `ls -la`.' } }],
       usage: { prompt_tokens: 20, completion_tokens: 10 },
-      model: 'openai/gpt-4o-mini-2024-07-18',
+      model: 'qwen/qwen3-coder-next',
     });
 
     const client = new OpenRouterClient(makeConfig());
     const response = await client.query(makeRequest());
 
     expect(response.content).toBe('Run `ls -la`.');
-    expect(response.model).toBe('openai/gpt-4o-mini-2024-07-18');
+    expect(response.model).toBe('qwen/qwen3-coder-next');
     expect(response.inputTokens).toBe(20);
     expect(response.outputTokens).toBe(10);
     expect(response.latencyMs).toBeGreaterThanOrEqual(0);
@@ -257,12 +257,12 @@ describe('OpenRouterClient — query', () => {
 describe('resolveModelForTask', () => {
   it('command_help maps to commandHelper field', () => {
     const modelId = resolveModelForTask('command_help', 'balanced');
-    expect(modelId).toBe('openai/gpt-4o-mini-2024-07-18');
+    expect(modelId).toBe('qwen/qwen3-coder-next');
   });
 
   it('code_explain maps to codeExplainer field', () => {
     const modelId = resolveModelForTask('code_explain', 'balanced');
-    expect(modelId).toBe('anthropic/claude-sonnet-4-20250514');
+    expect(modelId).toBe('qwen/qwen3-coder-next');
   });
 
   it('general maps to generalAssistant field', () => {

@@ -13,11 +13,11 @@ import type { RouterPreset } from './types';
 
 const balanced: RouterPreset = {
   name: 'balanced',
-  description: 'Good mix of quality and cost — sensible default for daily use.',
-  commandHelper: 'openai/gpt-4o-mini-2024-07-18',
-  codeExplainer: 'anthropic/claude-sonnet-4-20250514',
+  description: 'Good mix of quality and cost — QWen3 Coder for code tasks.',
+  commandHelper: 'qwen/qwen3-coder-next',
+  codeExplainer: 'qwen/qwen3-coder-next',
   generalAssistant: 'openai/gpt-4o-2024-11-20',
-  errorAnalyzer: 'anthropic/claude-sonnet-4-20250514',
+  errorAnalyzer: 'qwen/qwen3-coder-next',
 };
 
 const performance: RouterPreset = {

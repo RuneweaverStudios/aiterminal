@@ -122,6 +122,16 @@ const nemotronSuper: ModelConfig = {
   contextWindow: 131_072,
 };
 
+const qwen3CoderNext: ModelConfig = {
+  id: 'qwen/qwen3-coder-next',
+  name: 'QWen3 Coder Next',
+  provider: 'qwen',
+  inputCostPer1M: 0.16,
+  outputCostPer1M: 0.16,
+  maxTokens: 16384,
+  contextWindow: 131_072,
+};
+
 // ---------------------------------------------------------------------------
 // Exported registry  (keyed by OpenRouter model ID)
 // ---------------------------------------------------------------------------
@@ -138,6 +148,7 @@ export const MODELS: ReadonlyMap<string, ModelConfig> = new Map<string, ModelCon
   [gemini25Pro.id, gemini25Pro],
   [nemotronNano.id, nemotronNano],
   [nemotronSuper.id, nemotronSuper],
+  [qwen3CoderNext.id, qwen3CoderNext],
 ]);
 
 /**
