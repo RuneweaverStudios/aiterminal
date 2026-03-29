@@ -47,13 +47,46 @@ const TASK_TO_PRESET_FIELD: Readonly<Record<string, keyof RouterPreset>> = {
  *
  * Falls back to `generalAssistant` when the task type is not recognized.
  */
+/**
+ * Detect if a prompt requires a more capable model.
+ * Lightweight keyword/pattern detection — no LLM call.
+ */
+function isComplexPrompt(prompt: string): boolean {
+  const lower = prompt.toLowerCase()
+
+  // Multi-file operations
+  if (/refactor|restructur|migrat|architect|redesign/i.test(lower)) return true
+  // Debugging complex issues
+  if (/debug|troubleshoot|investigate|root cause|race condition|memory leak/i.test(lower)) return true
+  // Multi-step tasks
+  if (/implement.*and.*test|build.*deploy|fix.*all|overhaul/i.test(lower)) return true
+  // Error recovery signals
+  if (/still.*fail|doesn't work|broke|crash|not working|tried everything/i.test(lower)) return true
+  // Architecture questions
+  if (/how should I.*structur|best approach|design pattern|system design/i.test(lower)) return true
+  // Long prompts (>500 chars) suggest complexity
+  if (prompt.length > 500) return true
+
+  return false
+}
+
 export function resolveModelForTask(
   taskType: TaskType,
   presetName: string,
+  prompt?: string,
 ): string {
   const preset = getPreset(presetName);
   const field = TASK_TO_PRESET_FIELD[taskType] ?? 'generalAssistant';
-  return preset[field];
+  const baseModel = preset[field] as string;
+
+  // Auto-escalate to stronger model for complex prompts
+  const escalation = preset.escalationModel;
+  if (prompt && escalation && isComplexPrompt(prompt)) {
+    console.log(`[OpenRouter] Escalating to ${escalation} (complex prompt detected)`);
+    return escalation;
+  }
+
+  return baseModel;
 }
 
 // ---------------------------------------------------------------------------
@@ -193,6 +226,7 @@ export class OpenRouterClient implements IAIClient {
       const modelId = resolveModelForTask(
         request.taskType,
         this.activePresetName,
+        request.prompt,
       );
       const modelConfig = getModel(modelId);
       const messages = buildMessages(
@@ -234,6 +268,7 @@ export class OpenRouterClient implements IAIClient {
     const modelId = request.modelOverride ?? resolveModelForTask(
       request.taskType,
       this.activePresetName,
+      request.prompt,
     );
     const messages = buildMessages(
       this.systemPrompt,

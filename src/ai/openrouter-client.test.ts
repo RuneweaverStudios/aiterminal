@@ -278,6 +278,6 @@ describe('resolveModelForTask', () => {
   it('falls back to generalAssistant for unknown task types', () => {
     // Cast to TaskType to simulate an unexpected value at runtime.
     const modelId = resolveModelForTask('unknown_task' as TaskType, 'balanced');
-    expect(modelId).toBe('openai/gpt-4o-2024-11-20'); // balanced generalAssistant
+    expect(modelId).toBe('qwen/qwen3-coder-next'); // balanced generalAssistant
   });
 });

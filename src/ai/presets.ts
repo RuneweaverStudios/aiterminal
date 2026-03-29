@@ -13,11 +13,12 @@ import type { RouterPreset } from './types';
 
 const balanced: RouterPreset = {
   name: 'balanced',
-  description: 'QWen3 Coder Next for all tasks — strong coding with good general ability.',
+  description: 'QWen3 Coder Next — auto-escalates to Claude Sonnet for complex tasks.',
   commandHelper: 'qwen/qwen3-coder-next',
   codeExplainer: 'qwen/qwen3-coder-next',
   generalAssistant: 'qwen/qwen3-coder-next',
   errorAnalyzer: 'qwen/qwen3-coder-next',
+  escalationModel: 'anthropic/claude-sonnet-4-20250514',
 };
 
 const performance: RouterPreset = {
@@ -31,11 +32,12 @@ const performance: RouterPreset = {
 
 const budget: RouterPreset = {
   name: 'budget',
-  description: 'Free Nvidia Nemotron models — zero cost for daily use.',
+  description: 'Free Nemotron models — escalates to Super 120B for complex tasks.',
   commandHelper: 'nvidia/nemotron-3-nano-30b-a3b:free',
   codeExplainer: 'nvidia/nemotron-3-super-120b-a12b:free',
   generalAssistant: 'nvidia/nemotron-3-nano-30b-a3b:free',
   errorAnalyzer: 'nvidia/nemotron-3-super-120b-a12b:free',
+  escalationModel: 'nvidia/nemotron-3-super-120b-a12b:free',
 };
 
 const speed: RouterPreset = {

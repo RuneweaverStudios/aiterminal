@@ -31,6 +31,7 @@ export interface RouterPreset {
   readonly codeExplainer: string;    // Model ID for code explanation   (smart)
   readonly generalAssistant: string; // Model ID for general questions  (balanced)
   readonly errorAnalyzer: string;    // Model ID for error analysis     (accurate)
+  readonly escalationModel?: string; // Model ID for complex tasks      (auto-upgrade)
 }
 
 // ---------------------------------------------------------------------------
