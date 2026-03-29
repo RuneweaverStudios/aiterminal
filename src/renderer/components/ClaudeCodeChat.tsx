@@ -147,7 +147,9 @@ export const ClaudeCodeChat: React.FC<ClaudeCodeChatProps> = ({
           setLocalMessages(prev => [...prev, { role: 'user', content: messageText }]);
         } else {
           console.log('[ClaudeCodeChat] Sending to OpenRouter');
-          onSendMessage(messageText);
+          Promise.resolve(onSendMessage(messageText)).catch((err) => {
+            console.error('[ClaudeCodeChat] Send error:', err);
+          });
         }
         // Re-focus after sending
         setTimeout(() => {
@@ -257,16 +259,14 @@ export const ClaudeCodeChat: React.FC<ClaudeCodeChatProps> = ({
                 <div style={styles.markdownWrapper}>
                   <ReactMarkdown
                     components={{
-                      code: ({node, children, className, ...props}: any) =>
-                        className?.includes('language-') || !props.inline ? (
-                          <code style={styles.markdownCodeBlock} {...props}>
+                      code: ({children, className}: any) => {
+                        const isBlock = className?.includes('language-');
+                        return (
+                          <code style={isBlock ? styles.markdownCodeBlock : styles.markdownInlineCode}>
                             {children}
                           </code>
-                        ) : (
-                          <code style={styles.markdownInlineCode} {...props}>
-                            {children}
-                          </code>
-                        ),
+                        );
+                      },
                       p: ({children}: any) => <p style={styles.markdownParagraph}>{children}</p>,
                       ul: ({children}: any) => <ul style={{margin: '0 0 8px 0', paddingLeft: '16px'}}>{children}</ul>,
                       ol: ({children}: any) => <ol style={{margin: '0 0 8px 0', paddingLeft: '16px'}}>{children}</ol>,
@@ -293,16 +293,14 @@ export const ClaudeCodeChat: React.FC<ClaudeCodeChatProps> = ({
                 <div style={styles.markdownWrapper}>
                   <ReactMarkdown
                     components={{
-                      code: ({node, children, className, ...props}: any) =>
-                        className?.includes('language-') || !props.inline ? (
-                          <code style={styles.markdownCodeBlock} {...props}>
+                      code: ({children, className}: any) => {
+                        const isBlock = className?.includes('language-');
+                        return (
+                          <code style={isBlock ? styles.markdownCodeBlock : styles.markdownInlineCode}>
                             {children}
                           </code>
-                        ) : (
-                          <code style={styles.markdownInlineCode} {...props}>
-                            {children}
-                          </code>
-                        ),
+                        );
+                      },
                       p: ({children}: any) => <p style={styles.markdownParagraph}>{children}</p>,
                       ul: ({children}: any) => <ul style={{margin: '0 0 8px 0', paddingLeft: '16px'}}>{children}</ul>,
                       ol: ({children}: any) => <ol style={{margin: '0 0 8px 0', paddingLeft: '16px'}}>{children}</ol>,
