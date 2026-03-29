@@ -261,6 +261,48 @@ function extractImportantOutput(raw: string, cmd: string): string {
 }
 
 // ---------------------------------------------------------------------------
+// Summarize AI response for TTS — strips tool tags, code, markdown
+// ---------------------------------------------------------------------------
+
+function summarizeForTTS(accumulated: string): string {
+  let clean = accumulated
+    .replace(/\[RUN\].*?(?:\[\/(?:RUN\]?)?|$)/gs, '')
+    .replace(/\[FILE:[^\]]*?\][\s\S]*?(?:\[\/FILE\]|$)/g, '')
+    .replace(/\[EDIT:[^\]]*?\][\s\S]*?(?:\[\/EDIT\]|$)/g, '')
+    .replace(/\[DELETE:[^\]]*?\]?/g, '')
+    .replace(/\[READ:[^\]]*?\]?/g, '')
+    .replace(/\[(?:RUN|READ|FILE|EDIT|DELETE)(?::[^\]]*)?$/g, '')
+    .replace(/\{(?:READ|exec|RUN|EDIT|FILE):[^}]*\}?/gi, '')
+    .replace(/```[\s\S]*?```/g, '')
+    .replace(/\*\*([^*]+)\*\*/g, '$1')
+    .replace(/`[^`]+`/g, '')
+    .replace(/#{1,6}\s/g, '')
+    .replace(/\(voice\)\s*"[^"]*"/g, '')
+    .replace(/⚡ Executed:[^\n]*/g, '')
+    .replace(/📄 Read[^\n]*/g, '')
+    .replace(/✅[^\n]*/g, '')
+    .replace(/❌[^\n]*/g, '')
+    .replace(/\n{2,}/g, ' ')
+    .trim()
+
+  if (clean.length === 0) return ''
+
+  // Take first 2 natural-language sentences
+  const sentences = clean.match(/[^.!?]+[.!?]+/g)
+  if (sentences && sentences.length > 0) {
+    return sentences
+      .slice(0, 2)
+      .map(s => s.trim())
+      .filter(s => s.length > 5)
+      .join(' ')
+      .trim()
+  }
+
+  // Fallback: first 120 chars
+  return clean.length > 120 ? clean.slice(0, 120).trim() + '...' : clean
+}
+
+// ---------------------------------------------------------------------------
 // Hook
 // ---------------------------------------------------------------------------
 
@@ -510,9 +552,6 @@ export function useChat(): UseChatReturn {
             )
 
             let accumulated = ''
-            let sentenceBuffer = '' // Track incomplete sentences
-            let spokenSentences = 0 // Track how many sentences we've spoken
-            const MAX_SPOKEN_SENTENCES = 2 // Only speak first 2 sentences
 
             await api.aiQueryStream(
               { prompt: fullPrompt, taskType: 'general', context, modelOverride },
@@ -523,41 +562,6 @@ export function useChat(): UseChatReturn {
                 }
                 if (payload.chunk) {
                   accumulated += payload.chunk
-                  sentenceBuffer += payload.chunk
-
-                  // Check if we have complete sentences (ending with . ! ? or newline)
-                  const sentences = sentenceBuffer.match(/[^.!?]*[.!?]+/g)
-
-                  if (sentences && sentences.length > 0 && spokenSentences < MAX_SPOKEN_SENTENCES) {
-                    // Send complete sentences to TTS immediately (up to 2 sentences max)
-                    sentences.forEach((sentence) => {
-                      let trimmed = sentence.trim()
-                      // Strip any tool tags from TTS input
-                      trimmed = trimmed
-                        .replace(/\[(?:RUN|READ|FILE|EDIT|DELETE):[^\]]*\]?/gi, '')
-                        .replace(/\{(?:READ|exec|RUN):[^}]*\}?/gi, '')
-                        .replace(/\[\/(?:RUN|FILE|EDIT)\]?/gi, '')
-                        .trim()
-                      // Skip code/JSON fragments — only speak natural language
-                      const looksLikeCode = /^[\s{}\[\]"':,;`<>()=|&!@#$%^*+~\\]/.test(trimmed) ||
-                        /^\d+[",})\]]/.test(trimmed) ||
-                        trimmed.includes('```') ||
-                        trimmed.split(/[{}()\[\]"':;,]/).length > trimmed.split(/\s/).length
-                      if (trimmed && trimmed.length > 10 && !looksLikeCode && spokenSentences < MAX_SPOKEN_SENTENCES) {
-                        const speakEvent = new CustomEvent('ai-response', { detail: trimmed })
-                        window.dispatchEvent(speakEvent)
-                        spokenSentences++
-                      }
-                    })
-
-                    // Keep the incomplete part in buffer
-                    const lastSentenceEnd = sentenceBuffer.lastIndexOf(sentences[sentences.length - 1])
-                    if (lastSentenceEnd !== -1) {
-                      sentenceBuffer = sentenceBuffer.substring(lastSentenceEnd + sentences[sentences.length - 1].length)
-                    } else {
-                      sentenceBuffer = ''
-                    }
-                  }
 
                   // Strip all tool tags during streaming — forgiving patterns for partial/malformed tags
                   const displayText = accumulated
@@ -604,6 +608,12 @@ export function useChat(): UseChatReturn {
                 }
               },
             )
+
+            // Dispatch summarized TTS after stream completes (not during streaming)
+            const ttsSummary = summarizeForTTS(accumulated)
+            if (ttsSummary.length > 0) {
+              window.dispatchEvent(new CustomEvent('ai-tts-summary', { detail: ttsSummary }))
+            }
 
             const afterRunTags = applyRunTags(accumulated)
             const { text: finalContent, operations } = extractFileOps(afterRunTags)
@@ -708,13 +718,12 @@ export function useChat(): UseChatReturn {
             const assistantMsg = createAssistantMessage(content, model)
             setMessages((prev) => [...prev, assistantMsg].slice(-MAX_MESSAGES))
 
-            // Auto-speak the response using TTS
+            // Auto-speak summarized response via TTS
             try {
-              // Summarize to 1-2 sentences before speaking
-              const sentences = content.split(/[.!?]+/).filter(s => s.trim().length > 0)
-              const summary = sentences.slice(0, 2).join('. ')
-              const speakEvent = new CustomEvent('ai-response', { detail: summary })
-              window.dispatchEvent(speakEvent)
+              const summary = summarizeForTTS(content)
+              if (summary.length > 0) {
+                window.dispatchEvent(new CustomEvent('ai-tts-summary', { detail: summary }))
+              }
             } catch (e) {
               console.error('[useChat] TTS error:', e)
             }

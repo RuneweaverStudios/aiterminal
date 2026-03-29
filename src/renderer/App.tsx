@@ -118,13 +118,18 @@ export const App: FC = () => {
   voiceSpeakRef.current = voice.speak
 
   useEffect(() => {
-    const handleAIResponse = (event: any) => {
+    const handleTTSSummary = (event: any) => {
+      const summary = event.detail as string
+      if (!summary) return
+      // Speak the summary via TTS
       if (ttsEnabledRef.current) {
-        voiceSpeakRef.current(event.detail).catch(() => {})
+        voiceSpeakRef.current(summary).catch(() => {})
       }
+      // Show as VRM speech bubble
+      speechBubbles.addBubble(summary)
     }
-    window.addEventListener('ai-response', handleAIResponse)
-    return () => window.removeEventListener('ai-response', handleAIResponse)
+    window.addEventListener('ai-tts-summary', handleTTSSummary)
+    return () => window.removeEventListener('ai-tts-summary', handleTTSSummary)
   }, [])
 
   // Auto-open chat when Claude Code is detected
