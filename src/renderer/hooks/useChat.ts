@@ -143,25 +143,49 @@ export interface UseChatReturn {
 // PTY output capture — listens for terminal output after a command
 // ---------------------------------------------------------------------------
 
-function capturePtyOutput(sessionId: string, _cmd: string, durationMs: number): Promise<string> {
+// Prompt patterns that indicate the shell is idle and ready for input
+const SHELL_PROMPT_RE = /(?:[$%>#])\s*$/m
+
+function capturePtyOutput(sessionId: string, _cmd: string, _durationMs: number): Promise<string> {
+  const MAX_MS = 15000
+  const DEBOUNCE_MS = 200
+  const MIN_OUTPUT_LEN = 10
+
   return new Promise((resolve) => {
     let output = ''
+    let debounceTimer: ReturnType<typeof setTimeout> | null = null
+    let maxTimer: ReturnType<typeof setTimeout> | null = null
+    let settled = false
+
     const api = window.electronAPI
     if (!api?.onSessionData) {
       resolve('')
       return
     }
 
-    const unsub = api.onSessionData(sessionId, (data: string) => {
-      output += data
-    })
-
-    setTimeout(() => {
+    function finish() {
+      if (settled) return
+      settled = true
+      if (debounceTimer !== null) clearTimeout(debounceTimer)
+      if (maxTimer !== null) clearTimeout(maxTimer)
       unsub()
-      // Strip ANSI escape codes for clean text
       const clean = output.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '').replace(/\r/g, '')
       resolve(clean)
-    }, durationMs)
+    }
+
+    const unsub = api.onSessionData(sessionId, (data: string) => {
+      output += data
+
+      // After a prompt is detected and we have meaningful output, debounce-resolve
+      const stripped = output.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '').replace(/\r/g, '')
+      if (stripped.length > MIN_OUTPUT_LEN && SHELL_PROMPT_RE.test(stripped)) {
+        if (debounceTimer !== null) clearTimeout(debounceTimer)
+        debounceTimer = setTimeout(finish, DEBOUNCE_MS)
+      }
+    })
+
+    // Hard cap fallback
+    maxTimer = setTimeout(finish, MAX_MS)
   })
 }
 

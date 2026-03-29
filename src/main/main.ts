@@ -15,6 +15,7 @@
 
 import { config } from 'dotenv';
 import { join, resolve } from 'node:path';
+import { execFileSync } from 'node:child_process';
 import { app, BrowserWindow, ipcMain } from 'electron';
 import { getSuperenvPath } from '../integrations/ecosystem.js';
 
@@ -278,6 +279,27 @@ app.whenReady().then(() => {
           basePrompt += `\n\nWORKING DIRECTORY: ${cwd}\nPROJECT STRUCTURE:\n${treeStr}`;
         } catch {
           basePrompt += `\n\nWORKING DIRECTORY: ${cwd}`;
+        }
+
+        // Append git context if the CWD is a git repo
+        try {
+          const execOpts = { cwd, timeout: 3000, encoding: 'utf8' as const };
+          const branch = execFileSync('git', ['branch', '--show-current'], execOpts).trim();
+          const log = execFileSync('git', ['log', '--oneline', '-5'], execOpts).trim();
+          const status = execFileSync('git', ['status', '--short'], execOpts).trim();
+
+          let gitSection = `\n\nGIT CONTEXT:\nBranch: ${branch}`;
+          if (log) {
+            const logLines = log.split('\n').map(l => `  ${l}`).join('\n');
+            gitSection += `\nRecent commits:\n${logLines}`;
+          }
+          if (status) {
+            const statusLines = status.split('\n').map(l => `  ${l}`).join('\n');
+            gitSection += `\nModified files:\n${statusLines}`;
+          }
+          basePrompt += gitSection;
+        } catch {
+          // Not a git repo or git not available — silently skip
         }
       }
 

@@ -28,6 +28,9 @@ import { getPreset } from './presets';
 const DEFAULT_BASE_URL = 'https://openrouter.ai/api/v1';
 const DEFAULT_MAX_TOKENS = 8192;
 
+const RETRY_DELAYS_MS = [1000, 2000, 4000];
+const RETRYABLE_STATUS_CODES = new Set([429, 500, 502, 503]);
+
 // ---------------------------------------------------------------------------
 // Pure helper: map TaskType → RouterPreset field
 // ---------------------------------------------------------------------------
@@ -228,44 +231,91 @@ export class OpenRouterClient implements IAIClient {
   // -------------------------------------------------------------------------
 
   async *streamQuery(request: AIRequest): AsyncIterable<string> {
-    try {
-      const modelId = request.modelOverride ?? resolveModelForTask(
-        request.taskType,
-        this.activePresetName,
-      );
-      const messages = buildMessages(
-        this.systemPrompt,
-        request.context,
-        request.prompt,
-      );
+    const modelId = request.modelOverride ?? resolveModelForTask(
+      request.taskType,
+      this.activePresetName,
+    );
+    const messages = buildMessages(
+      this.systemPrompt,
+      request.context,
+      request.prompt,
+    );
 
-      const stream = await this.openai.chat.completions.create({
-        model: modelId,
-        messages: [...messages],
-        max_tokens: request.maxTokens ?? DEFAULT_MAX_TOKENS,
-        stream: true,
-      });
+    // Collect all chunks via retry loop, then yield them.
+    // Retrying inside an async generator is not possible after the first yield,
+    // so we buffer the full stream before yielding any output.
+    let chunks: string[] = [];
+    let lastError: unknown;
 
-      for await (const chunk of stream as AsyncIterable<OpenAI.Chat.Completions.ChatCompletionChunk>) {
-        const choice = chunk.choices[0];
-        const delta = choice?.delta?.content;
-        if (delta) {
-          yield delta;
+    for (let attempt = 0; attempt <= RETRY_DELAYS_MS.length; attempt++) {
+      try {
+        chunks = [];
+
+        const stream = await this.openai.chat.completions.create({
+          model: modelId,
+          messages: [...messages],
+          max_tokens: request.maxTokens ?? DEFAULT_MAX_TOKENS,
+          stream: true,
+        });
+
+        for await (const chunk of stream as AsyncIterable<OpenAI.Chat.Completions.ChatCompletionChunk>) {
+          const choice = chunk.choices[0];
+          const delta = choice?.delta?.content;
+          if (delta) {
+            chunks.push(delta);
+          }
+          // Log if stream ended for unexpected reasons
+          if (choice?.finish_reason && choice.finish_reason !== 'stop') {
+            console.warn(`[OpenRouter] Stream ended with finish_reason: ${choice.finish_reason}`);
+          }
+          // Capture usage from final chunk (OpenRouter includes it)
+          const usage = (chunk as any).usage;
+          if (usage) {
+            chunks.push(`\x00USAGE:${JSON.stringify(usage)}`);
+          }
         }
-        // Log if stream ended for unexpected reasons
-        if (choice?.finish_reason && choice.finish_reason !== 'stop') {
-          console.warn(`[OpenRouter] Stream ended with finish_reason: ${choice.finish_reason}`);
+
+        // Stream completed successfully — break out of retry loop.
+        lastError = undefined;
+        break;
+      } catch (error: unknown) {
+        const status =
+          error instanceof Error && 'status' in error
+            ? (error as { status: number }).status
+            : undefined;
+
+        const isRetryable = status !== undefined && RETRYABLE_STATUS_CODES.has(status);
+
+        if (!isRetryable) {
+          // Non-retryable error (e.g. 400, 401, 403) — fail immediately.
+          const errorMessage =
+            error instanceof Error ? error.message : 'Stream error occurred.';
+          yield `Error: ${errorMessage}`;
+          return;
         }
-        // Capture usage from final chunk (OpenRouter includes it)
-        const usage = (chunk as any).usage;
-        if (usage) {
-          yield `\x00USAGE:${JSON.stringify(usage)}`;
+
+        lastError = error;
+
+        if (attempt < RETRY_DELAYS_MS.length) {
+          const delayMs = RETRY_DELAYS_MS[attempt];
+          console.warn(
+            `[OpenRouter] Retryable error (status ${status}), attempt ${attempt + 1}/${RETRY_DELAYS_MS.length}. Retrying in ${delayMs}ms…`,
+          );
+          await new Promise<void>((resolve) => setTimeout(resolve, delayMs));
         }
       }
-    } catch (error: unknown) {
+    }
+
+    if (lastError !== undefined) {
+      // All retries exhausted.
       const errorMessage =
-        error instanceof Error ? error.message : 'Stream error occurred.';
+        lastError instanceof Error ? lastError.message : 'Stream error occurred.';
       yield `Error: ${errorMessage}`;
+      return;
+    }
+
+    for (const chunk of chunks) {
+      yield chunk;
     }
   }
 }
