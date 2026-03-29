@@ -167,7 +167,7 @@ export const ClaudeCodeChat: React.FC<ClaudeCodeChatProps> = ({
 
   const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const newValue = e.target.value;
-    console.log('[ClaudeCodeChat] Input changed:', newValue);
+    // Input tracking — no console logging
     setInput(newValue);
 
     // Auto-expand for multiline if shift+enter was used

@@ -334,8 +334,13 @@ export function useChat(): UseChatReturn {
     setAttachedFiles([])
   }, [])
 
+  // Internal send that skips user message bubble (for agent loop continuations)
+  const sendMessageInternal = async (content: string) => {
+    await sendMessage(content, undefined, true)
+  }
+
   const sendMessage = useCallback(
-    async (content: string, modelOverride?: string) => {
+    async (content: string, modelOverride?: string, _hidden = false) => {
       const trimmed = content.trim()
       if (trimmed.length === 0) return
 
@@ -358,9 +363,11 @@ export function useChat(): UseChatReturn {
         await api.updateInternSystemPrompt({ intern: activeIntern, cwd })
       }
 
-      // Create user message with current attachments
-      const userMsg = createUserMessage(trimmed, attachedFiles)
-      setMessages((prev) => [...prev, userMsg].slice(-MAX_MESSAGES))
+      // Create user message with current attachments (skip for hidden continuations)
+      if (!_hidden) {
+        const userMsg = createUserMessage(trimmed, attachedFiles)
+        setMessages((prev) => [...prev, userMsg].slice(-MAX_MESSAGES))
+      }
 
       // Build context from attached files for the AI prompt
       const fileContext = attachedFiles
@@ -475,9 +482,14 @@ export function useChat(): UseChatReturn {
                   if (sentences && sentences.length > 0 && spokenSentences < MAX_SPOKEN_SENTENCES) {
                     // Send complete sentences to TTS immediately (up to 2 sentences max)
                     sentences.forEach((sentence) => {
-                      const trimmed = sentence.trim()
-                      if (trimmed && spokenSentences < MAX_SPOKEN_SENTENCES) {
-                        // TTS streaming — no hot-path logging
+                      let trimmed = sentence.trim()
+                      // Strip any tool tags from TTS input
+                      trimmed = trimmed
+                        .replace(/\[(?:RUN|READ|FILE|EDIT|DELETE):[^\]]*\]?/gi, '')
+                        .replace(/\{(?:READ|exec|RUN):[^}]*\}?/gi, '')
+                        .replace(/\[\/(?:RUN|FILE|EDIT)\]?/gi, '')
+                        .trim()
+                      if (trimmed && trimmed.length > 3 && spokenSentences < MAX_SPOKEN_SENTENCES) {
                         const speakEvent = new CustomEvent('ai-response', { detail: trimmed })
                         window.dispatchEvent(speakEvent)
                         spokenSentences++
@@ -500,6 +512,9 @@ export function useChat(): UseChatReturn {
                     .replace(/\[EDIT:[^\]]*\][\s\S]*?\[\/EDIT\]/g, '')
                     .replace(/\[DELETE:[^\]]*\]/g, '')
                     .replace(/\[READ:[^\]]*\]/g, '')
+                    // Strip non-standard tag variants models sometimes output
+                    .replace(/\{(?:READ|exec|RUN|EDIT|FILE):[^}]*\}?/gi, '')
+                    .replace(/\(voice\)\s*"[^"]*"/g, '')
 
                   setMessages((prev) =>
                     prev.map((m) =>
@@ -544,9 +559,11 @@ export function useChat(): UseChatReturn {
                 try {
                   const result = await window.electronAPI.readFile(readOp.filePath)
                   if (result.content) {
-                    // Inject file content as a system-ish context message
+                    const lines = result.content.split('\n').length
+                    const size = result.content.length
+                    // Show compact summary in chat, inject full content as context for AI
                     const fileMsg = createAssistantMessage(
-                      `📄 **${readOp.filePath}**\n\`\`\`\n${result.content.slice(0, 5000)}\n\`\`\``,
+                      `📄 Read **${readOp.filePath}** (${lines} lines, ${Math.round(size / 1024)}KB)`,
                     )
                     setMessages((prev) => [...prev, fileMsg].slice(-MAX_MESSAGES))
                   }
@@ -599,7 +616,8 @@ export function useChat(): UseChatReturn {
                         readFiles ? `Read: ${readFiles}` : '',
                         editFiles ? `Applied edits to: ${editFiles}` : '',
                       ].filter(Boolean).join('. ')
-                      pendingSendRef.current?.(`${context}. Continue — what's the next step? If done, say "Complete."`)
+                      // Send as hidden continuation (no user message bubble)
+                      sendMessageInternal(`${context}. Continue — what's the next step? If done, say "Complete."`)
                     }
                   }, 500)
                 }
