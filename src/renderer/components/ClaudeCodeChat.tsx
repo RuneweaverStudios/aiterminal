@@ -56,13 +56,25 @@ export const ClaudeCodeChat: React.FC<ClaudeCodeChatProps> = ({
   const [isMultiline, setIsMultiline] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const messagesContainerRef = useRef<HTMLDivElement>(null);
+  const userScrolledUpRef = useRef(false);
 
   // Local message state for Claude Code mode (bubbles without triggering OpenRouter)
   const [localMessages, setLocalMessages] = useState<Array<{ role: 'user' | 'assistant'; content: string }>>([]);
 
-  // Auto-scroll to bottom when new messages arrive
+  // Track if user has scrolled up (don't force-scroll if they're reading history)
+  const handleMessagesScroll = () => {
+    const el = messagesContainerRef.current;
+    if (!el) return;
+    const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+    userScrolledUpRef.current = distanceFromBottom > 80;
+  };
+
+  // Auto-scroll to bottom only when user is near bottom
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    if (!userScrolledUpRef.current) {
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }
   }, [messages]);
 
   // Focus textarea on mount and when backend changes to claude-code
@@ -198,7 +210,7 @@ export const ClaudeCodeChat: React.FC<ClaudeCodeChatProps> = ({
       )}
 
       {/* Message History */}
-      <div style={styles.messagesContainer}>
+      <div ref={messagesContainerRef} onScroll={handleMessagesScroll} style={styles.messagesContainer}>
         {/* In Claude Code mode, use local messages; in OpenRouter mode, use prop messages */}
         {(backend === 'claude-code' ? localMessages : messages).map((msg, idx) => (
           <div
