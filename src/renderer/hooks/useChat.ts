@@ -602,16 +602,22 @@ export function useChat(): UseChatReturn {
                 }
               }
 
-              // Stop agent loop if AI signals completion or no operations
-              if (chatMode === 'autocode' && operations.length === 0) {
-                // No tool tags in response — AI is done or just talking
-                if (/\bcomplete\b|\bdone\b|\bfinished\b/i.test(accumulated)) {
+              // Stop agent loop conditions
+              if (chatMode === 'autocode') {
+                if (operations.length === 0 && /\bcomplete\b|\bdone\b|\bfinished\b/i.test(accumulated)) {
+                  agentLoopActiveRef.current = false
+                }
+                // Stop if AI response is empty or just whitespace
+                if (accumulated.replace(/\[.*?\]/g, '').trim().length === 0) {
                   agentLoopActiveRef.current = false
                 }
               }
 
-              // Autocode agent loop: auto-continue if operations were performed
-              if (chatMode === 'autocode' && agentLoopActiveRef.current && operations.length > 0) {
+              // Autocode agent loop: only auto-continue if WRITE operations were performed
+              // READ-only responses don't need continuation — the AI already has context
+              const hasWriteOps = writeOps.length > 0
+              const hasRunOps = accumulated.includes('[RUN]')
+              if (chatMode === 'autocode' && agentLoopActiveRef.current && (hasWriteOps || hasRunOps)) {
                 agentLoopIterationsRef.current++
                 if (agentLoopIterationsRef.current < MAX_AGENT_ITERATIONS) {
                   // Brief delay then continue
