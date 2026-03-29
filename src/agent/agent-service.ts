@@ -34,9 +34,8 @@ const TRUNCATION_MARKER = '\n... [truncated]'
 function sanitizeFilePath(raw: string): string | null {
   const trimmed = raw.trim()
   if (trimmed.length === 0) return null
-  // Reject absolute paths and traversal
-  if (trimmed.startsWith('/') || trimmed.startsWith('\\') || /^[A-Za-z]:/.test(trimmed)) return null
   if (trimmed.includes('..')) return null
+  // Allow absolute paths (AI may use them) — IPC layer validates workspace policy
   return trimmed
 }
 

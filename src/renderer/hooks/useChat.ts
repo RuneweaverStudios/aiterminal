@@ -489,7 +489,12 @@ export function useChat(): UseChatReturn {
                         .replace(/\{(?:READ|exec|RUN):[^}]*\}?/gi, '')
                         .replace(/\[\/(?:RUN|FILE|EDIT)\]?/gi, '')
                         .trim()
-                      if (trimmed && trimmed.length > 3 && spokenSentences < MAX_SPOKEN_SENTENCES) {
+                      // Skip code/JSON fragments — only speak natural language
+                      const looksLikeCode = /^[\s{}\[\]"':,;`<>()=|&!@#$%^*+~\\]/.test(trimmed) ||
+                        /^\d+[",})\]]/.test(trimmed) ||
+                        trimmed.includes('```') ||
+                        trimmed.split(/[{}()\[\]"':;,]/).length > trimmed.split(/\s/).length
+                      if (trimmed && trimmed.length > 10 && !looksLikeCode && spokenSentences < MAX_SPOKEN_SENTENCES) {
                         const speakEvent = new CustomEvent('ai-response', { detail: trimmed })
                         window.dispatchEvent(speakEvent)
                         spokenSentences++
