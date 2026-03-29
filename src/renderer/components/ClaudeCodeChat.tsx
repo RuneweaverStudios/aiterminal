@@ -57,39 +57,47 @@ export const ClaudeCodeChat: React.FC<ClaudeCodeChatProps> = ({
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
-  const autoScrollRef = useRef(true);
-  const programmaticScrollRef = useRef(false);
+  const lockedToBottomRef = useRef(true);
+  const prevMessageCountRef = useRef(0);
 
   // Local message state for Claude Code mode (bubbles without triggering OpenRouter)
   const [localMessages, setLocalMessages] = useState<Array<{ role: 'user' | 'assistant'; content: string }>>([]);
 
-  // Detect user scroll: if user scrolls up, disable auto-scroll.
-  // If user scrolls back to bottom, re-enable it.
-  const handleMessagesScroll = () => {
-    // Ignore scroll events we caused programmatically
-    if (programmaticScrollRef.current) {
-      programmaticScrollRef.current = false;
-      return;
-    }
+  // User scroll detection: any wheel/touch scroll up disables auto-scroll.
+  // We listen to wheel events directly, not onScroll, to avoid confusion
+  // with programmatic scrollTop changes.
+  useEffect(() => {
     const el = messagesContainerRef.current;
     if (!el) return;
-    const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
-    // User scrolled up — stop auto-scrolling
-    if (distanceFromBottom > 25) {
-      autoScrollRef.current = false;
-    }
-    // User scrolled back to bottom — resume auto-scrolling
-    if (distanceFromBottom < 30) {
-      autoScrollRef.current = true;
-    }
-  };
+    const handleWheel = (e: WheelEvent) => {
+      if (e.deltaY < 0) {
+        // Scrolling UP — user wants to read history
+        lockedToBottomRef.current = false;
+      } else if (e.deltaY > 0) {
+        // Scrolling DOWN — check if at bottom, re-lock
+        const distFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+        if (distFromBottom < 50) {
+          lockedToBottomRef.current = true;
+        }
+      }
+    };
+    el.addEventListener('wheel', handleWheel, { passive: true });
+    return () => el.removeEventListener('wheel', handleWheel);
+  }, []);
 
-  // Auto-scroll on new content, but only if user hasn't scrolled up
+  // Auto-scroll only when locked to bottom
   useEffect(() => {
-    if (!autoScrollRef.current) return;
+    // Always scroll when a NEW message is added (user sent a message)
+    const currentCount = messages.length;
+    if (currentCount > prevMessageCountRef.current) {
+      // New message added — scroll to bottom and re-lock
+      lockedToBottomRef.current = true;
+    }
+    prevMessageCountRef.current = currentCount;
+
+    if (!lockedToBottomRef.current) return;
     const el = messagesContainerRef.current;
     if (el) {
-      programmaticScrollRef.current = true;
       el.scrollTop = el.scrollHeight;
     }
   }, [messages]);
@@ -227,7 +235,7 @@ export const ClaudeCodeChat: React.FC<ClaudeCodeChatProps> = ({
       )}
 
       {/* Message History */}
-      <div ref={messagesContainerRef} onScroll={handleMessagesScroll} style={styles.messagesContainer}>
+      <div ref={messagesContainerRef} style={styles.messagesContainer}>
         {/* In Claude Code mode, use local messages; in OpenRouter mode, use prop messages */}
         {(backend === 'claude-code' ? localMessages : messages).map((msg, idx) => (
           <div
