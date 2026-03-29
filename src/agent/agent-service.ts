@@ -126,7 +126,7 @@ export function parseAgentResponse(
     // Heuristic: if it contains spaces and each segment looks like a file path
     const segments = rawPaths.split(/\s+/)
     const allLookLikeFiles = segments.length > 1 &&
-      segments.every(s => /[./]/.test(s) || /\.\w+$/.test(s))
+      segments.every(s => /\.\w{1,6}$/.test(s))
 
     if (allLookLikeFiles) {
       // Multiple files in one tag — split them
@@ -209,11 +209,10 @@ function sortByPosition(
 
   for (const op of operations) {
     const tag =
-      op.type === 'delete'
-        ? `[DELETE:${op.filePath}]`
-        : op.type === 'edit'
-          ? `[EDIT:${op.filePath}]`
-          : `[FILE:${op.filePath}]`
+      op.type === 'delete' ? `[DELETE:${op.filePath}]`
+      : op.type === 'edit' ? `[EDIT:${op.filePath}]`
+      : op.type === 'read' ? `[READ:${op.filePath}]`
+      : `[FILE:${op.filePath}]`
     const pos = aiContent.indexOf(tag)
     positionMap.set(op.id, pos >= 0 ? pos : Infinity)
   }

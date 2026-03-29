@@ -51,9 +51,15 @@ function stripAllToolTags(text: string): string {
     // Non-standard tag variants (budget model hallucinations)
     .replace(/\{(?:READ|exec|RUN|EDIT|FILE):[^}]*\}?/gi, '')
     .replace(/\(voice\)\s*"[^"]*"/g, '')
-    // Thinking/reasoning tags — strip the tags but KEEP the content visible
-    .replace(/<\/?think>/g, '')
-    .replace(/<\/?thinking>/g, '')
+    // Thinking/reasoning tags — strip COMPLETE blocks, show orphaned content
+    .replace(/<think>[\s\S]*?<\/think>\s*/g, '')
+    .replace(/<thinking>[\s\S]*?<\/thinking>\s*/g, '')
+    // Strip orphaned opening tags (streaming cutoff) — hide reasoning in progress
+    .replace(/<think>[\s\S]*/g, '')
+    .replace(/<thinking>[\s\S]*/g, '')
+    // Clean up orphaned closing tags
+    .replace(/<\/think>/g, '')
+    .replace(/<\/thinking>/g, '')
     .replace(/<tool_call>[\s\S]*?(?:<\/tool_call>|$)/g, '')
     .replace(/<tool_call>[^\n]*/g, '')
     .replace(/<function[\s\S]*?(?:<\/function>|$)/g, '')
@@ -390,9 +396,15 @@ function summarizeForTTS(accumulated: string): string {
     .replace(/Dependencies:[^\n]*/g, '')
     .replace(/Available CLI[^\n]*/g, '')
     .replace(/How to Customize:[^\n]*/g, '')
-    // Thinking/reasoning tags — strip the tags but KEEP the content visible
-    .replace(/<\/?think>/g, '')
-    .replace(/<\/?thinking>/g, '')
+    // Thinking/reasoning tags — strip COMPLETE blocks, show orphaned content
+    .replace(/<think>[\s\S]*?<\/think>\s*/g, '')
+    .replace(/<thinking>[\s\S]*?<\/thinking>\s*/g, '')
+    // Strip orphaned opening tags (streaming cutoff) — hide reasoning in progress
+    .replace(/<think>[\s\S]*/g, '')
+    .replace(/<thinking>[\s\S]*/g, '')
+    // Clean up orphaned closing tags
+    .replace(/<\/think>/g, '')
+    .replace(/<\/thinking>/g, '')
     .replace(/<tool_call>[\s\S]*?(?:<\/tool_call>|$)/g, '')
     .replace(/<tool_call>[^\n]*/g, '')
     .replace(/<function[\s\S]*?(?:<\/function>|$)/g, '')
@@ -816,10 +828,19 @@ export function useChat(): UseChatReturn {
               }
             }
 
-            const afterRunTags = applyRunTags(accumulated)
+            // Unwrap think blocks for tag extraction — remove markers but keep content
+            // so tool tags inside <think> blocks are visible to applyRunTags/extractFileOps
+            const unwrapped = accumulated
+              .replace(/<\/?think>/g, '')
+              .replace(/<\/?thinking>/g, '')
 
-            // Process memory tags: [MEMORY:add]content[/MEMORY] and [USER:add]content[/USER]
-            processMemoryTags(afterRunTags)
+            const afterRunTags = applyRunTags(unwrapped)
+
+            // Process memory tags on think-stripped text (don't save reasoning as memories)
+            const memoryText = accumulated
+              .replace(/<think>[\s\S]*?<\/think>/g, '')
+              .replace(/<think>[\s\S]*/g, '')
+            processMemoryTags(memoryText)
 
             const { text: finalContent, operations } = extractFileOps(afterRunTags)
             setMessages((prev) =>
