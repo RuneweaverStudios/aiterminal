@@ -329,6 +329,8 @@ export function useChat(): UseChatReturn {
       // Apply mode prefix
       const modePrefix = chatMode === 'plan'
         ? '[PLAN MODE] Describe what changes you would make and why, but do NOT use [FILE], [EDIT], or [DELETE] tags. Only analyze and explain your plan.\n\n'
+        : chatMode === 'autocode'
+        ? '[AUTOCODE MODE] You have full autonomy. DO NOT suggest actions — TAKE them directly. Use [READ:path] to read files, [EDIT:path] to fix code, [RUN]command[/RUN] to execute commands. Act immediately without asking permission. If you find errors, read the file, fix it, and verify. Never say "you should" — just do it.\n\n'
         : ''
 
       const fullPrompt = modePrefix + (fileContext
