@@ -505,14 +505,16 @@ export function useChat(): UseChatReturn {
                     }
                   }
 
-                  // Strip raw tool tags during streaming so they don't flash
+                  // Strip all tool tags during streaming — forgiving patterns for partial/malformed tags
                   const displayText = accumulated
                     .replace(/\[RUN\].*?(?:\[\/(?:RUN\]?)?|$)/gs, '')
-                    .replace(/\[FILE:[^\]]*\][\s\S]*?\[\/FILE\]/g, '')
-                    .replace(/\[EDIT:[^\]]*\][\s\S]*?\[\/EDIT\]/g, '')
-                    .replace(/\[DELETE:[^\]]*\]/g, '')
-                    .replace(/\[READ:[^\]]*\]/g, '')
-                    // Strip non-standard tag variants models sometimes output
+                    .replace(/\[FILE:[^\]]*?\][\s\S]*?(?:\[\/FILE\]|$)/g, '')
+                    .replace(/\[EDIT:[^\]]*?\][\s\S]*?(?:\[\/EDIT\]|$)/g, '')
+                    .replace(/\[DELETE:[^\]]*?\]?/g, '')
+                    .replace(/\[READ:[^\]]*?\]?/g, '')
+                    // Strip partial tags still being typed (e.g., [READ:tests/integ mid-stream)
+                    .replace(/\[(?:RUN|READ|FILE|EDIT|DELETE)(?::[^\]]*)?$/g, '')
+                    // Strip non-standard tag variants
                     .replace(/\{(?:READ|exec|RUN|EDIT|FILE):[^}]*\}?/gi, '')
                     .replace(/\(voice\)\s*"[^"]*"/g, '')
 

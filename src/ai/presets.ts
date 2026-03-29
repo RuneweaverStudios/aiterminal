@@ -58,7 +58,7 @@ export const PRESETS: ReadonlyMap<string, RouterPreset> = new Map<string, Router
   [speed.name, speed],
 ]);
 
-export const DEFAULT_PRESET = 'speed';
+export const DEFAULT_PRESET = 'budget';
 
 /**
  * Look up a preset by name.

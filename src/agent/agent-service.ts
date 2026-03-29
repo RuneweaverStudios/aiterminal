@@ -114,8 +114,8 @@ export function parseAgentResponse(
     }
   }
 
-  // Parse [READ:path] tags (AI requesting to read a file)
-  const readRegex = /\[READ:([^\]]+)\]/g
+  // Parse [READ:path] tags — forgiving: closing ] optional
+  const readRegex = /\[READ:([^\]\n]+)\]?/g
 
   while ((match = readRegex.exec(aiContent)) !== null) {
     const filePath = sanitizeFilePath(match[1])
@@ -131,7 +131,7 @@ export function parseAgentResponse(
   }
 
   // Parse [DELETE:path] tags
-  const deleteRegex = /\[DELETE:([^\]]+)\]/g
+  const deleteRegex = /\[DELETE:([^\]\n]+)\]?/g
 
   while ((match = deleteRegex.exec(aiContent)) !== null) {
     const filePath = sanitizeFilePath(match[1])
