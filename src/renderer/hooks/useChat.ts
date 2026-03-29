@@ -165,7 +165,14 @@ function capturePtyOutput(sessionId: string, _cmd: string, durationMs: number): 
 // ---------------------------------------------------------------------------
 
 function extractImportantOutput(raw: string, cmd: string): string {
-  const lines = raw.split('\n')
+  // Strip ANSI remnants and carriage returns
+  const clean = raw
+    .replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '')
+    .replace(/\x1b\][^\x07]*\x07/g, '')
+    .replace(/\x1b\]8;;[^\x1b]*\x1b\\/g, '')
+    .replace(/\r/g, '')
+
+  const lines = clean.split('\n')
   const important: string[] = []
   const isTest = /test|spec|check|lint|build|compile/i.test(cmd)
 
@@ -173,32 +180,53 @@ function extractImportantOutput(raw: string, cmd: string): string {
     const l = line.trim()
     if (l.length === 0) continue
 
-    // Always keep: errors, warnings, failures, panics
-    if (/error|Error|ERROR|fail|FAIL|panic|PANIC|warning|warn(?:ing)?:|WARN/i.test(l)) {
+    // SKIP: progress bars, build progress, verbose compilation noise
+    if (/^\s*Building \[/.test(l)) continue
+    if (/^\s*Checking \w/.test(l)) continue
+    if (/^\s*Compiling \w/.test(l) && !(/error|warning/i.test(l))) continue
+    if (/^\s*Downloading\b/.test(l)) continue
+    if (/^\s*Downloaded\b/.test(l)) continue
+    if (/^\s*Fetching\b/.test(l)) continue
+    if (/^\s*Unpacking\b/.test(l)) continue
+    if (/^\s*Fresh\b/.test(l)) continue
+    if (l.length > 200) continue // skip very long lines (binary output, JSON dumps)
+
+    // Keep: errors, failures, panics
+    if (/\berror\b|\bfail\b|\bpanic\b/i.test(l)) {
       important.push(l)
       continue
     }
-    // Test results summary lines
-    if (isTest && /(?:test result|tests? (?:passed|failed|ok)|running \d|PASSED|FAILED|✓|✗|✘|ok \(|failures:)/i.test(l)) {
+    // Keep: warnings (but not "warning: build failed, waiting" duplicates)
+    if (/\bwarning\b/i.test(l) && !/build failed, waiting/i.test(l)) {
       important.push(l)
       continue
     }
-    // Compilation status
-    if (/^(?:Compiling|Finished|Building|Linking|warning\[|error\[)/i.test(l)) {
+    // Keep: test results
+    if (isTest && /(?:test result|tests? (?:passed|failed|ok)|running \d|PASSED|FAILED|ok \(|failures:)/i.test(l)) {
       important.push(l)
       continue
     }
-    // Exit codes and summaries
-    if (/(?:exit code|exited with|status:|\d+ passed|\d+ failed|\d+ error)/i.test(l)) {
+    // Keep: final status lines
+    if (/^Finished\b/i.test(l)) {
+      important.push(l)
+      continue
+    }
+    // Keep: exit codes
+    if (/(?:exit code|exited with|\d+ passed|\d+ failed)/i.test(l)) {
       important.push(l)
       continue
     }
   }
 
-  // Deduplicate and limit
+  // Deduplicate and limit to 30 lines
   const unique = [...new Set(important)]
-  if (unique.length > 50) {
-    return unique.slice(0, 25).join('\n') + '\n... (' + (unique.length - 25) + ' more lines)\n' + unique.slice(-10).join('\n')
+  if (unique.length > 30) {
+    return unique.slice(0, 15).join('\n') + '\n... (' + (unique.length - 15) + ' more)\n' + unique.slice(-5).join('\n')
+  }
+  if (unique.length === 0) {
+    // No important lines found — return last 5 lines as fallback
+    const lastLines = lines.filter(l => l.trim().length > 0).slice(-5)
+    return lastLines.join('\n') || '(no output captured)'
   }
   return unique.join('\n')
 }
