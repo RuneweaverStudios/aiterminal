@@ -266,23 +266,49 @@ function extractImportantOutput(raw: string, cmd: string): string {
 
 function summarizeForTTS(accumulated: string): string {
   let clean = accumulated
+    // Strip all tool tags (forgiving patterns)
     .replace(/\[RUN\].*?(?:\[\/(?:RUN\]?)?|$)/gs, '')
     .replace(/\[FILE:[^\]]*?\][\s\S]*?(?:\[\/FILE\]|$)/g, '')
     .replace(/\[EDIT:[^\]]*?\][\s\S]*?(?:\[\/EDIT\]|$)/g, '')
     .replace(/\[DELETE:[^\]]*?\]?/g, '')
     .replace(/\[READ:[^\]]*?\]?/g, '')
     .replace(/\[(?:RUN|READ|FILE|EDIT|DELETE)(?::[^\]]*)?$/g, '')
+    .replace(/\[\/[A-Z]*\]?/g, '')
     .replace(/\{(?:READ|exec|RUN|EDIT|FILE):[^}]*\}?/gi, '')
+    // Strip code blocks and inline code
     .replace(/```[\s\S]*?```/g, '')
+    .replace(/`[^`\n]+`/g, '')
+    // Strip markdown formatting
     .replace(/\*\*([^*]+)\*\*/g, '$1')
-    .replace(/`[^`]+`/g, '')
     .replace(/#{1,6}\s/g, '')
-    .replace(/\(voice\)\s*"[^"]*"/g, '')
+    .replace(/[-*]\s/g, '')
+    // Strip file paths and extensions
+    .replace(/\S+\.\w{1,5}\]/g, '')
+    .replace(/\/\S+\.\w{1,5}/g, '')
+    .replace(/\w+\.\w{2,4}(?:\s|$)/g, ' ')
+    // Strip tool output markers
     .replace(/⚡ Executed:[^\n]*/g, '')
     .replace(/📄 Read[^\n]*/g, '')
     .replace(/✅[^\n]*/g, '')
     .replace(/❌[^\n]*/g, '')
-    .replace(/\n{2,}/g, ' ')
+    .replace(/\(voice\)\s*"[^"]*"/g, '')
+    .replace(/Output from[^\n]*/g, '')
+    .replace(/Analyze the results[^\n]*/g, '')
+    .replace(/Continue —[^\n]*/g, '')
+    // Strip lines that look like code/config/output
+    .split('\n')
+    .filter(line => {
+      const l = line.trim()
+      if (l.length === 0) return false
+      if (/^[{}\[\]()=<>|&;:,]/.test(l)) return false
+      if (/^\s*(import|from|def |class |const |let |var |function )/.test(l)) return false
+      if (/^\s*[A-Z_]{2,}\s*[:=]/.test(l)) return false
+      if (/^\d+[-:]/.test(l)) return false
+      if (l.split(/[{}()\[\]"':;,=]/).length > l.split(/\s/).length) return false
+      return true
+    })
+    .join(' ')
+    .replace(/\s{2,}/g, ' ')
     .trim()
 
   if (clean.length === 0) return ''
@@ -293,13 +319,17 @@ function summarizeForTTS(accumulated: string): string {
     return sentences
       .slice(0, 2)
       .map(s => s.trim())
-      .filter(s => s.length > 5)
+      .filter(s => s.length > 10)
       .join(' ')
       .trim()
   }
 
-  // Fallback: first 120 chars
-  return clean.length > 120 ? clean.slice(0, 120).trim() + '...' : clean
+  // Fallback: first 100 chars if it looks like natural language
+  if (clean.length > 10 && /[a-z]/.test(clean)) {
+    return clean.length > 100 ? clean.slice(0, 100).trim() + '...' : clean
+  }
+
+  return ''
 }
 
 // ---------------------------------------------------------------------------
@@ -609,10 +639,12 @@ export function useChat(): UseChatReturn {
               },
             )
 
-            // Dispatch summarized TTS after stream completes (not during streaming)
-            const ttsSummary = summarizeForTTS(accumulated)
-            if (ttsSummary.length > 0) {
-              window.dispatchEvent(new CustomEvent('ai-tts-summary', { detail: ttsSummary }))
+            // Dispatch summarized TTS only for user-initiated messages (not auto-continuations)
+            if (!_hidden) {
+              const ttsSummary = summarizeForTTS(accumulated)
+              if (ttsSummary.length > 0) {
+                window.dispatchEvent(new CustomEvent('ai-tts-summary', { detail: ttsSummary }))
+              }
             }
 
             const afterRunTags = applyRunTags(accumulated)
