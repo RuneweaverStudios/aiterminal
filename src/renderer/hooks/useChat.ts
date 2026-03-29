@@ -545,8 +545,8 @@ export function useChat(): UseChatReturn {
       // Start agent loop in autocode mode
       if (chatMode === 'autocode') {
         agentLoopActiveRef.current = true
-        // Reset iterations on new user-initiated message (not auto-continuations)
-        if (!trimmed.startsWith('Read:') && !trimmed.startsWith('Applied edits') && !trimmed.startsWith('Output from') && !trimmed.startsWith('Terminal output')) {
+        // Reset iterations only on genuine user-initiated messages (not nudges/continuations)
+        if (!_hidden) {
           agentLoopIterationsRef.current = 0
         }
       }
