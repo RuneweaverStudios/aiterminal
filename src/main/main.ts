@@ -114,7 +114,9 @@ GUIDELINES:
 - Always read relevant files before editing them
 - When creating projects, create all necessary files (package.json, src/, etc.)
 - The user can also attach files with @filename for you to reference
-- Keep responses brief and helpful. Always finish your sentences.`;
+- Keep responses brief and helpful. Always finish your sentences.
+
+PLATFORM: ${process.platform === 'win32' ? 'Windows. Use PowerShell/cmd syntax (dir, type, mkdir). Do NOT use Unix commands (ls, cat, mkdir -p, ~).' : process.platform === 'darwin' ? 'macOS. Use bash/zsh syntax.' : 'Linux. Use bash syntax.'}`;
 
 function createAIClient(): OpenRouterClient | null {
   const apiKey = process.env.OPENROUTER_API_KEY;

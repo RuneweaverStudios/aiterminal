@@ -26,7 +26,7 @@ import type { TerminalSessionManager } from './terminal-session-manager.js';
 import { ThemeManager, serializeThemeConfig } from '../themes/theme-manager';
 import { readDirectory, readDirectoryTree } from '../file-tree/file-tree-service';
 import * as fs from 'node:fs/promises';
-import { watch } from 'node:fs';
+import { watch, existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { homedir } from 'node:os';
 import {
@@ -478,9 +478,7 @@ export function setupAllHandlers(
 
   // Update session cwd (called by renderer after cd command)
   ipc.on('update-session-cwd', (_event, sessionId: string, cwd: string) => {
-    // Validate CWD exists before updating
-    const fs = require('node:fs');
-    if (cwd && typeof cwd === 'string' && fs.existsSync(cwd)) {
+    if (cwd && typeof cwd === 'string' && existsSync(cwd)) {
       getSessionManager()?.updateSessionCwd(sessionId, cwd);
     }
   });

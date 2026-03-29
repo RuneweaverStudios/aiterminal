@@ -5,7 +5,7 @@
   "private": true,
   "main": "dist/main/main/main.js",
   "scripts": {
-    "dev": "tsc -p tsconfig.main.json && NODE_ENV=development npx concurrently \"vite\" \"npx wait-on http://localhost:5173 && electron .\"",
+    "dev": "tsc -p tsconfig.main.json && npx cross-env NODE_ENV=development npx concurrently \"vite\" \"npx wait-on http://localhost:5173 && electron .\"",
     "dev:renderer": "vite",
     "dev:main": "tsc -p tsconfig.main.json && electron .",
     "build": "tsc && vite build",
@@ -47,6 +47,7 @@
     "@vitejs/plugin-react": "^4.3.4",
     "@vitest/coverage-v8": "^2.1.8",
     "concurrently": "^9.2.1",
+    "cross-env": "^10.1.0",
     "electron": "^34.0.0",
     "electron-builder": "^25.1.8",
     "jsdom": "^25.0.1",

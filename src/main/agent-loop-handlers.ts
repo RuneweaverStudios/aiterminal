@@ -9,7 +9,7 @@
  */
 
 import { ipcMain, BrowserWindow } from 'electron';
-import { resolve } from 'node:path';
+import { resolve, parse as parsePath } from 'node:path';
 import { existsSync } from 'node:fs';
 import type { AgentLoopConfig, AgentEvent } from '../agent-loop/events.js';
 import { getAgentLoopRouter } from '../agent-loop/router.js';
@@ -51,7 +51,8 @@ function sanitizeWorkspaceRoot(raw?: string): string {
 
   const resolved = resolve(raw);
   // Reject paths containing traversal or pointing to system roots
-  if (resolved.includes('..') || resolved === '/' || resolved === 'C:\\') {
+  const isDriveRoot = parsePath(resolved).root === resolved;
+  if (resolved.includes('..') || resolved === '/' || isDriveRoot) {
     return fallback;
   }
   // Must exist as a directory (or be creatable under home)

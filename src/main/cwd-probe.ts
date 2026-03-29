@@ -40,27 +40,10 @@ export function resolveCwdFromPid(pid: number): string | null {
       }
     }
     if (process.platform === 'win32') {
-      // Use WMI via PowerShell to query process working directory
-      // Note: Get-Process .Path returns the executable path, not CWD.
-      // WMI Win32_Process.ExecutablePath + CommandLine can help, but
-      // there's no reliable generic CWD probe on Windows. Best-effort:
-      // try the undocumented .NET approach first, fall back to null.
-      try {
-        const out = execFileSync('powershell.exe', [
-          '-NoProfile', '-Command',
-          `[System.Diagnostics.Process]::GetProcessById(${pid}).StartInfo.WorkingDirectory`,
-        ], {
-          encoding: 'utf8',
-          maxBuffer: 1024 * 1024,
-          timeout: 3000,
-        });
-        const cwd = out.trim();
-        if (cwd && cwd.length > 0 && existsSync(cwd)) {
-          return cwd;
-        }
-      } catch {
-        // StartInfo.WorkingDirectory is often empty for running processes
-      }
+      // Windows has no reliable API to get a running process's CWD.
+      // StartInfo.WorkingDirectory is always empty for running processes.
+      // The CWD is tracked via PTY output parsing and session state instead.
+      // This function returns null on Windows — callers fall back to session.cwd.
       return null;
     }
   } catch {

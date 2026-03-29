@@ -421,7 +421,7 @@ export function useTerminalTabs(): UseTerminalTabsReturn {
       }
 
       const tabId = generateTabId()
-      const fileName = filePath.split('/').pop() || filePath
+      const fileName = filePath.split(/[/\\]/).pop() || filePath
 
       const newTab: FileTab = {
         id: tabId,
