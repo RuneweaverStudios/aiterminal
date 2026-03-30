@@ -307,8 +307,9 @@
 .chat-streaming-indicator {
   display: flex;
   align-items: center;
-  justify-content: flex-end;
-  padding: 8px 14px;
+  justify-content: flex-start;
+  padding: 4px 14px;
+  min-height: 24px;
 }
 
 /* ===== Input Area (Cursor-style composer) ===== */

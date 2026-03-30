@@ -210,6 +210,7 @@ export interface ElectronAPI {
   readDirectoryTree: (dirPath: string, depth: number) => Promise<ReadonlyArray<FileEntry>>;
   readFile: (filePath: string) => Promise<FileReadResult>;
   writeFile: (filePath: string, content: string) => Promise<FileWriteResult>;
+  editFile: (filePath: string, search: string, replace: string) => Promise<FileWriteResult>;
   deleteFile: (filePath: string) => Promise<FileWriteResult>;
   getAutocompleteContext: (
     sessionId?: string,

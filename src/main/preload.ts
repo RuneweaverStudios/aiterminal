@@ -98,6 +98,7 @@ const electronAPI: ElectronAPI = {
         model?: string;
         modelLabel?: string;
         usage?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number };
+        toolCall?: string;
       },
     ) => {
       if (payload.requestId !== requestId) return;
@@ -252,6 +253,9 @@ const electronAPI: ElectronAPI = {
   // --- Agent file operations ---
   writeFile: (filePath: string, content: string) =>
     ipcRenderer.invoke('write-file', filePath, content),
+
+  editFile: (filePath: string, search: string, replace: string) =>
+    ipcRenderer.invoke('edit-file', filePath, search, replace),
 
   deleteFile: (filePath: string) =>
     ipcRenderer.invoke('delete-file', filePath),

@@ -134,8 +134,8 @@ export function renderToolCalls(text: string): { cleanText: string; toolCalls: R
   }
   cleanText = cleanText.replace(/⚡ Executed: `[^`]+`\n*/g, '');
 
-  // Match file reads
-  const readRegex = /📄 Read \*\*([^*]+)\*\* — (\d+ lines, \d+KB)/g;
+  // Match file reads (both "X lines, YKB" and "X lines" formats)
+  const readRegex = /📄 Read \*\*([^*]+)\*\* — (\d+ lines(?:, \d+KB)?)/g;
   while ((match = readRegex.exec(text)) !== null) {
     toolCalls.push(
       <ToolCallDisplay
@@ -147,7 +147,7 @@ export function renderToolCalls(text: string): { cleanText: string; toolCalls: R
       />
     );
   }
-  cleanText = cleanText.replace(/📄 Read \*\*[^*]+\*\* — \d+ lines, \d+KB\n*/g, '');
+  cleanText = cleanText.replace(/📄 Read \*\*[^*]+\*\* — \d+ lines(?:, \d+KB)?\n*/g, '');
 
   // Match file writes
   const writeRegex = /✅ \*\*([^*]+)\*\*/g;
@@ -161,6 +161,20 @@ export function renderToolCalls(text: string): { cleanText: string; toolCalls: R
       />
     );
   }
+
+  // Match file deletes
+  const deleteRegex = /🗑 ([^\n]+)/g;
+  while ((match = deleteRegex.exec(text)) !== null) {
+    toolCalls.push(
+      <ToolCallDisplay
+        key={`del-${idx++}`}
+        type="delete"
+        path={match[1].trim()}
+        status="done"
+      />
+    );
+  }
+  cleanText = cleanText.replace(/🗑 [^\n]+\n*/g, '');
 
   // Match errors
   const errorRegex = /❌ (\w+) ([^:]+): (.+)/g;

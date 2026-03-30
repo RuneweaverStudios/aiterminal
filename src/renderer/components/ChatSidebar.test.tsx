@@ -256,13 +256,15 @@ describe('ChatSidebar', () => {
     expect(screen.getByTestId('chat-streaming-indicator')).toBeInTheDocument()
   })
 
-  it('does not show streaming indicator when isStreaming is false', () => {
+  it('hides streaming indicator when isStreaming is false', () => {
     const props = createProps({
       state: createState({ isStreaming: false }),
     })
     render(<ChatSidebar {...props} />)
 
-    expect(screen.queryByTestId('chat-streaming-indicator')).toBeNull()
+    const indicator = screen.queryByTestId('chat-streaming-indicator')
+    expect(indicator).toBeTruthy()
+    expect(indicator!.style.visibility).toBe('hidden')
   })
 
   // -------------------------------------------------------------------------

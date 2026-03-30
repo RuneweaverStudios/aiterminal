@@ -351,7 +351,7 @@ export class OpenRouterClient implements IAIClient {
         });
 
         // Track tool call accumulation across streaming chunks
-        const toolCallBuffers = new Map<number, { name: string; args: string }>();
+        const toolCallBuffers = new Map<number, { id: string; name: string; args: string }>();
 
         // Connection succeeded — stream in real-time (no more retries possible)
         for await (const chunk of stream as AsyncIterable<OpenAI.Chat.Completions.ChatCompletionChunk>) {
@@ -369,8 +369,8 @@ export class OpenRouterClient implements IAIClient {
             for (const tc of toolCalls) {
               const idx = tc.index ?? 0;
               if (tc.function?.name) {
-                // New tool call starting
-                toolCallBuffers.set(idx, { name: tc.function.name, args: '' });
+                // New tool call starting — capture id for function calling protocol
+                toolCallBuffers.set(idx, { id: tc.id ?? '', name: tc.function.name, args: '' });
               }
               if (tc.function?.arguments) {
                 const buf = toolCallBuffers.get(idx);
@@ -386,7 +386,11 @@ export class OpenRouterClient implements IAIClient {
             for (const [, buf] of toolCallBuffers) {
               try {
                 const args = JSON.parse(buf.args || '{}');
-                const toolData: ToolCallData = { name: buf.name, arguments: args };
+                const toolData: ToolCallData = {
+                  ...(buf.id ? { id: buf.id } : {}),
+                  name: buf.name,
+                  arguments: args,
+                };
                 yield `${TOOL_CALL_SENTINEL}${JSON.stringify(toolData)}`;
                 console.log(`[OpenRouter] Tool call: ${buf.name}(${JSON.stringify(args)})`);
               } catch {

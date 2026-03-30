@@ -470,7 +470,8 @@ export function useChat(): UseChatReturn {
   const agentLoopActiveRef = useRef(false)
   const agentLoopIterationsRef = useRef(0)
   const activeStreamIdRef = useRef<string | null>(null)
-  const MAX_AGENT_ITERATIONS = 10
+  const continuationPendingRef = useRef(false)
+  const MAX_AGENT_ITERATIONS = 100
 
   const cycleChatMode = useCallback(() => {
     setChatMode(prev => {
@@ -554,9 +555,18 @@ export function useChat(): UseChatReturn {
   }, [])
 
   // Internal send that skips user message bubble (for agent loop continuations)
-  // Optional modelOverride forces a specific model (used for escalation)
+  // Guarded against concurrent calls — only one continuation in-flight at a time
   const sendMessageInternal = async (content: string, modelOverride?: string) => {
-    await sendMessage(content, modelOverride, true)
+    if (continuationPendingRef.current) {
+      console.log('[AgentLoop] Skipping concurrent continuation — one already in-flight')
+      return
+    }
+    continuationPendingRef.current = true
+    try {
+      await sendMessage(content, modelOverride, true)
+    } finally {
+      continuationPendingRef.current = false
+    }
   }
 
   const sendMessage = useCallback(
@@ -570,6 +580,7 @@ export function useChat(): UseChatReturn {
         // Reset iterations only on genuine user-initiated messages (not nudges/continuations)
         if (!_hidden) {
           agentLoopIterationsRef.current = 0
+          ;(window as any).__nativeToolSession = false
         }
       }
 
@@ -743,6 +754,9 @@ export function useChat(): UseChatReturn {
             let lastChunkPattern = ''
             let earlyTTSFired = false
             const nativeToolCalls: Array<{ name: string; arguments: Record<string, string> }> = []
+            // Track if this model session has ever used native tool calls
+            // (persists across continuation turns to prevent text-tag nudge interference)
+            const modelUsesNativeTools = _hidden ? (window as any).__nativeToolSession === true : false
 
             await api.aiQueryStream(
               { prompt: fullPrompt, taskType: 'general', context, modelOverride },
@@ -753,54 +767,12 @@ export function useChat(): UseChatReturn {
                 }
 
                 // Handle native tool calls (from function calling API)
+                // Just collect them during streaming — execute AFTER stream ends
                 if ((payload as any).toolCall) {
                   try {
                     const tc = JSON.parse((payload as any).toolCall)
                     nativeToolCalls.push(tc)
                     console.log('[useChat] Native tool call received:', tc.name, tc.arguments)
-
-                    // Convert to text tag format for the existing pipeline
-                    const { name, arguments: args } = tc
-                    let tagText = ''
-                    if (name === 'run_command') tagText = `\n[RUN:${args.command}]\n`
-                    else if (name === 'read_file') tagText = `\n[READ:${args.path}]\n`
-                    else if (name === 'edit_file') tagText = `\n[EDIT:${args.path}]\n<<<< SEARCH\n${args.search}\n====\n${args.replace}\n>>>> REPLACE\n[/EDIT]\n`
-                    else if (name === 'create_file') tagText = `\n[FILE:${args.path}]\n${args.content}\n[/FILE]\n`
-                    else if (name === 'delete_file') tagText = `\n[DELETE:${args.path}]\n`
-
-                    if (tagText) {
-                      accumulated += tagText
-                    }
-
-                    // Execute tool calls immediately and queue results for the next turn
-                    // This is how proper function calling works — model gets results back
-                    if (name === 'read_file' && args.path) {
-                      window.electronAPI?.readFile?.(args.path).then((result: { content?: string; error?: string }) => {
-                        if (result.content) {
-                          fileContextRef.current.set(args.path, result.content.slice(0, 5000))
-                          const lines = result.content.split('\n').length
-                          const preview = result.content.slice(0, 2000)
-                          // Feed file content back to the model as a continuation
-                          if (agentLoopActiveRef.current) {
-                            pendingSendRef.current?.(`File ${args.path} (${lines} lines):\n\`\`\`\n${preview}\n\`\`\`\nAnalyze this file and continue with the next step.`)
-                          }
-                        }
-                      }).catch(() => {})
-                    }
-                    if (name === 'run_command' && args.command) {
-                      const sessionId = getAgentLoopState().activeSessionId
-                      if (sessionId && window.electronAPI?.writeToSession) {
-                        window.electronAPI.writeToSession(sessionId, args.command + '\r')
-                        capturePtyOutput(sessionId, args.command, 15000).then(output => {
-                          if (output.trim().length > 0) {
-                            const important = extractImportantOutput(output, args.command)
-                            if (important.length > 0 && agentLoopActiveRef.current) {
-                              pendingSendRef.current?.(`Output from \`${args.command}\`:\n\`\`\`\n${important}\n\`\`\`\nBriefly note the result, then continue.`)
-                            }
-                          }
-                        })
-                      }
-                    }
                   } catch (e) {
                     console.warn('[useChat] Failed to parse native tool call:', e)
                   }
@@ -898,13 +870,15 @@ export function useChat(): UseChatReturn {
             }
 
             // If native tool calls were used, skip text-based tag parsing entirely.
-            // The native calls already executed tools and queued results.
-            // Only strip tags from display text.
             const hadNativeToolCalls = nativeToolCalls.length > 0
+            // Mark this model session as native-tool-capable for future turns
+            if (hadNativeToolCalls) {
+              (window as any).__nativeToolSession = true
+            }
 
             let afterRunTags: string
             if (hadNativeToolCalls) {
-              console.log(`[useChat] ${nativeToolCalls.length} native tool calls handled — skipping text tag parsing`)
+              console.log(`[useChat] ${nativeToolCalls.length} native tool calls — executing batch`)
               afterRunTags = stripAllToolTags(accumulated)
             } else {
               // Fallback: parse text-based tags for models that don't support function calling
@@ -920,185 +894,251 @@ export function useChat(): UseChatReturn {
               .replace(/<think>[\s\S]*/g, '')
             processMemoryTags(memoryText)
 
-            // Skip file ops extraction if native tool calls handled everything
-            const { text: finalContent, operations } = hadNativeToolCalls
-              ? { text: afterRunTags, operations: [] as ReadonlyArray<FileOperation> }
-              : extractFileOps(afterRunTags)
-            setMessages((prev) =>
-              prev.map((m) =>
-                m.id === placeholderId ? { ...m, content: finalContent } : m,
-              ),
-            )
+            // ---------------------------------------------------------------
+            // NATIVE TOOL CALL EXECUTION (batched, sequential, single continuation)
+            // ---------------------------------------------------------------
+            if (hadNativeToolCalls && chatMode === 'autocode' && agentLoopActiveRef.current) {
+              setMessages((prev) =>
+                prev.map((m) =>
+                  m.id === placeholderId ? { ...m, content: afterRunTags } : m,
+                ),
+              )
 
-            // Handle file operations
-            if (operations.length > 0) {
-              // Auto-handle [READ:] tags — fetch file and inject into context
-              const readOps = operations.filter(op => op.type === 'read')
-              const writeOps = operations.filter(op => op.type !== 'read')
-
-              for (const readOp of readOps) {
+              // Execute all tool calls sequentially, collect results
+              // displayParts: compact one-liners for the chat UI
+              // modelParts: full context for the model continuation
+              const displayParts: string[] = []
+              const modelParts: string[] = []
+              for (const tc of nativeToolCalls) {
+                const { name, arguments: args } = tc
                 try {
-                  const result = await window.electronAPI.readFile(readOp.filePath)
-                  if (result.content) {
-                    // Store in persistent file context (survives message window eviction)
-                    fileContextRef.current.set(readOp.filePath, result.content.slice(0, 5000))
-                    const lines = result.content.split('\n').length
-                    const size = result.content.length
-                    const fileMsg = createAssistantMessage(
-                      `📄 Read **${readOp.filePath}** — ${lines} lines, ${Math.round(size / 1024)}KB`,
-                    )
-                    setMessages((prev) => [...prev, fileMsg].slice(-MAX_MESSAGES))
-                  }
-                } catch {
-                  /* ignore read errors */
-                }
-              }
-
-              // Autocode mode: apply immediately. Normal mode: store for approval.
-              if (writeOps.length > 0) {
-                if (chatMode === 'autocode') {
-                  const results: string[] = []
-                  for (const op of writeOps) {
-                    const result = await applyOperation(op)
-                    if (result.success) {
-                      if (op.searchText != null) {
-                        results.push(`✅ **${op.filePath}**\n\`\`\`diff\n${op.searchText.split('\n').map(l => '- ' + l).join('\n')}\n${(op.replaceText || '').split('\n').map(l => '+ ' + l).join('\n')}\n\`\`\``)
-                      } else {
-                        results.push(`✅ ${op.type} ${op.filePath}`)
-                      }
+                  if (name === 'read_file' && args.path) {
+                    const result = await window.electronAPI.readFile(args.path)
+                    if (result.content) {
+                      fileContextRef.current.set(args.path, result.content.slice(0, 5000))
+                      const lines = result.content.split('\n').length
+                      const preview = result.content.slice(0, 2000)
+                      displayParts.push(`📄 Read **${args.path}** — ${lines} lines`)
+                      modelParts.push(`Read \`${args.path}\` (${lines} lines):\n\`\`\`\n${preview}\n\`\`\``)
                     } else {
-                      results.push(`❌ ${op.type} ${op.filePath}: ${result.error}`)
+                      const msg = `Failed to read \`${args.path}\`: ${result.error || 'empty'}`
+                      displayParts.push(msg)
+                      modelParts.push(msg)
+                    }
+                  } else if (name === 'run_command' && args.command) {
+                    const sessionId = getAgentLoopState().activeSessionId
+                    if (sessionId && window.electronAPI?.writeToSession) {
+                      window.electronAPI.writeToSession(sessionId, args.command + '\r')
+                      const output = await capturePtyOutput(sessionId, args.command, 15000)
+                      const important = extractImportantOutput(output, args.command)
+                      displayParts.push(`⚡ Executed: \`${args.command}\``)
+                      modelParts.push(`Output from \`${args.command}\`:\n\`\`\`\n${important || '(no output)'}\n\`\`\``)
+                    }
+                  } else if (name === 'edit_file' && args.path && args.search !== undefined && args.replace !== undefined) {
+                    const result = await window.electronAPI.editFile(args.path, args.search, args.replace)
+                    if (result.success) {
+                      displayParts.push(`✅ **${args.path}**`)
+                      modelParts.push(`Applied edit to \`${args.path}\``)
+                    } else {
+                      const msg = `❌ edit ${args.path}: ${result.error}`
+                      displayParts.push(msg)
+                      modelParts.push(`Edit failed for \`${args.path}\`: ${result.error}`)
+                    }
+                  } else if (name === 'create_file' && args.path && args.content !== undefined) {
+                    const result = await window.electronAPI.writeFile(args.path, args.content)
+                    if (result.success) {
+                      displayParts.push(`✅ ${args.path}`)
+                      modelParts.push(`Created \`${args.path}\``)
+                    } else {
+                      const msg = `❌ create ${args.path}: ${result.error}`
+                      displayParts.push(msg)
+                      modelParts.push(`Failed to create \`${args.path}\`: ${result.error}`)
+                    }
+                  } else if (name === 'delete_file' && args.path) {
+                    const result = await window.electronAPI.deleteFile(args.path)
+                    if (result.success) {
+                      displayParts.push(`🗑 ${args.path}`)
+                      modelParts.push(`Deleted \`${args.path}\``)
+                    } else {
+                      const msg = `❌ delete ${args.path}: ${result.error}`
+                      displayParts.push(msg)
+                      modelParts.push(`Failed to delete \`${args.path}\`: ${result.error}`)
                     }
                   }
-                  const summaryMsg = createAssistantMessage(results.join('\n\n'))
-                  setMessages((prev) => [...prev, summaryMsg].slice(-MAX_MESSAGES))
-                } else {
-                  setPendingFileOps(writeOps)
+                } catch (e) {
+                  const msg = `Error executing ${name}: ${e instanceof Error ? e.message : 'unknown'}`
+                  displayParts.push(msg)
+                  modelParts.push(msg)
                 }
               }
 
-              // Stop agent loop conditions
-              if (chatMode === 'autocode') {
-                const strippedContent = accumulated.replace(/\[.*?\]/g, '').replace(/\[\/?\w*\]?/g, '').replace(/[→←↑↓•·,\s.\[\]\/]+/g, '').trim()
-                const hasTagFragments = /\[/.test(accumulated)
-                const hasCompleteTags = hadNativeToolCalls || operations.length > 0 || accumulated.includes('[RUN]') || accumulated.includes('[RUN:')
-                const isDone = /(?:task|everything|all\s+\w+\s+is)\s+(?:complete|done|finished)|^complete\.?$/im.test(accumulated)
+              // Update display with compact tool call summary
+              if (displayParts.length > 0) {
+                const toolSummary = displayParts.join('\n')
+                const displayContent = afterRunTags
+                  ? `${afterRunTags}\n\n${toolSummary}`
+                  : toolSummary
+                setMessages((prev) =>
+                  prev.map((m) =>
+                    m.id === placeholderId ? { ...m, content: displayContent } : m,
+                  ),
+                )
+              }
 
-                console.log('[AgentLoop] Post-stream analysis:', {
-                  iteration: agentLoopIterationsRef.current,
-                  loopActive: agentLoopActiveRef.current,
-                  accumulatedLen: accumulated.length,
-                  strippedLen: strippedContent.length,
-                  hasTagFragments,
-                  hasCompleteTags,
-                  hadNativeToolCalls,
-                  nativeToolCallCount: nativeToolCalls.length,
-                  isDone,
-                  opsCount: operations.length,
-                  first80: accumulated.slice(0, 80),
-                })
+              // Check if AI signaled completion
+              const isDone = /(?:task|everything|all\s+\w+\s+is)\s+(?:complete|done|finished)|^complete\.?$/im.test(accumulated)
+              if (isDone) {
+                console.log('[AgentLoop] STOPPING — AI signaled completion (native path)')
+                agentLoopActiveRef.current = false
+              }
+
+              // Send ONE batched continuation with all results (full context for model)
+              if (agentLoopActiveRef.current && modelParts.length > 0) {
+                agentLoopIterationsRef.current++
+                if (agentLoopIterationsRef.current < MAX_AGENT_ITERATIONS) {
+                  console.log(`[AgentLoop] Native continuation #${agentLoopIterationsRef.current} with ${modelParts.length} results`)
+                  const continuation = modelParts.join('\n\n') + '\n\nBriefly note the results, then continue with the next step. If done, say "Complete."'
+                  setTimeout(() => {
+                    if (agentLoopActiveRef.current) {
+                      sendMessageInternal(continuation)
+                    }
+                  }, 300)
+                } else {
+                  console.log(`[AgentLoop] Max iterations (${MAX_AGENT_ITERATIONS}) reached — stopping`)
+                  agentLoopActiveRef.current = false
+                }
+              }
+            } else if (hadNativeToolCalls) {
+              // Non-autocode mode with native tool calls — just display, no loop
+              const { text: finalContent } = { text: afterRunTags }
+              setMessages((prev) =>
+                prev.map((m) =>
+                  m.id === placeholderId ? { ...m, content: finalContent } : m,
+                ),
+              )
+            } else {
+              // ---------------------------------------------------------------
+              // TEXT-TAG FALLBACK (models without function calling)
+              // ---------------------------------------------------------------
+              const { text: finalContent, operations } = extractFileOps(afterRunTags)
+              setMessages((prev) =>
+                prev.map((m) =>
+                  m.id === placeholderId ? { ...m, content: finalContent } : m,
+                ),
+              )
+
+              // Handle file operations
+              if (operations.length > 0) {
+                // Auto-handle [READ:] tags — fetch file and inject into context
+                const readOps = operations.filter(op => op.type === 'read')
+                const writeOps = operations.filter(op => op.type !== 'read')
+
+                for (const readOp of readOps) {
+                  try {
+                    const result = await window.electronAPI.readFile(readOp.filePath)
+                    if (result.content) {
+                      fileContextRef.current.set(readOp.filePath, result.content.slice(0, 5000))
+                      const lines = result.content.split('\n').length
+                      const size = result.content.length
+                      const fileMsg = createAssistantMessage(
+                        `📄 Read **${readOp.filePath}** — ${lines} lines, ${Math.round(size / 1024)}KB`,
+                      )
+                      setMessages((prev) => [...prev, fileMsg].slice(-MAX_MESSAGES))
+                    }
+                  } catch {
+                    /* ignore read errors */
+                  }
+                }
+
+                // Autocode mode: apply immediately. Normal mode: store for approval.
+                if (writeOps.length > 0) {
+                  if (chatMode === 'autocode') {
+                    const results: string[] = []
+                    for (const op of writeOps) {
+                      const result = await applyOperation(op)
+                      if (result.success) {
+                        if (op.searchText != null) {
+                          results.push(`✅ **${op.filePath}**\n\`\`\`diff\n${op.searchText.split('\n').map(l => '- ' + l).join('\n')}\n${(op.replaceText || '').split('\n').map(l => '+ ' + l).join('\n')}\n\`\`\``)
+                        } else {
+                          results.push(`✅ ${op.type} ${op.filePath}`)
+                        }
+                      } else {
+                        results.push(`❌ ${op.type} ${op.filePath}: ${result.error}`)
+                      }
+                    }
+                    const summaryMsg = createAssistantMessage(results.join('\n\n'))
+                    setMessages((prev) => [...prev, summaryMsg].slice(-MAX_MESSAGES))
+                  } else {
+                    setPendingFileOps(writeOps)
+                  }
+                }
+              }
+
+              // Stop agent loop conditions (text-tag path only)
+              if (chatMode === 'autocode' && agentLoopActiveRef.current) {
+                const isDone = /(?:task|everything|all\s+\w+\s+is)\s+(?:complete|done|finished)|^complete\.?$/im.test(accumulated)
+                const strippedContent = accumulated.replace(/\[.*?\]/g, '').replace(/\[\/?\w*\]?/g, '').replace(/[→←↑↓•·,\s.\[\]\/]+/g, '').trim()
+                const hasCompleteTags = operations.length > 0 || accumulated.includes('[RUN]') || accumulated.includes('[RUN:')
 
                 if (isDone && !hasCompleteTags) {
                   console.log('[AgentLoop] STOPPING — AI signaled completion')
                   agentLoopActiveRef.current = false
-                }
-
-                if (strippedContent.length === 0 && !hasTagFragments && !hadNativeToolCalls) {
-                  console.log('[AgentLoop] STOPPING — truly empty response (no text, no tags, no tool calls)')
+                  ;(window as any).__nativeToolSession = false
+                } else if (strippedContent.length === 0 && !hasCompleteTags && !modelUsesNativeTools) {
+                  // Only stop on empty response for non-native models.
+                  // Native models may return empty between concurrent continuation turns.
+                  console.log('[AgentLoop] STOPPING — truly empty response (non-native model)')
                   agentLoopActiveRef.current = false
-                }
-
-                // Nudge or escalate: if no complete tool tags were used
-                if (!hasCompleteTags && agentLoopActiveRef.current && !isDone) {
+                  ;(window as any).__nativeToolSession = false
+                } else if (modelUsesNativeTools) {
+                  // Model uses native tool calls but this turn had text only —
+                  // auto-continue the loop (don't nudge/escalate, the model knows how to use tools)
                   agentLoopIterationsRef.current++
-                  const iter = agentLoopIterationsRef.current
-                  const needsEscalation = iter >= 2
-
-                  console.log(`[AgentLoop] NUDGE #${iter} — no complete tags.${needsEscalation ? ' ESCALATING model.' : ''}`)
-
-                  if (iter < MAX_AGENT_ITERATIONS) {
+                  if (agentLoopIterationsRef.current < MAX_AGENT_ITERATIONS) {
+                    console.log(`[AgentLoop] Native model text-only turn — auto-continuing #${agentLoopIterationsRef.current}`)
                     setTimeout(() => {
-                      if (!agentLoopActiveRef.current) {
-                        console.log('[AgentLoop] Nudge cancelled — loop no longer active')
-                        return
-                      }
-                      if (needsEscalation) {
-                        const escalationModels: Record<string, string> = {
-                          budget: 'qwen/qwen3-coder-next',
-                          balanced: 'z-ai/glm-5',
-                          speed: 'qwen/qwen3-coder-next',
-                          performance: 'anthropic/claude-sonnet-4-20250514',
-                        }
-                        const api = window.electronAPI
-                        api?.getActiveAiModel?.('general').then((info: { presetName?: string }) => {
-                          const model = escalationModels[info?.presetName || 'budget'] || 'qwen/qwen3-coder-next'
-                          console.log(`[AgentLoop] Escalating to ${model}`)
-                          sendMessageInternal(
-                            'The previous model could not use tool tags. You MUST use tags to act:\n- [RUN:command] to execute (e.g. [RUN:pytest])\n- [READ:path] to read files\n- [EDIT:path]content[/EDIT] to edit\nACT NOW.',
-                            model,
-                          )
-                        }).catch(() => {
-                          sendMessageInternal('ACT NOW with [RUN:command] or [READ:path] tags.')
-                        })
-                      } else {
-                        sendMessageInternal('STOP describing. ACT NOW. Use these exact tags:\n- [RUN:pytest] to run commands\n- [READ:main.py] to read files\nDo NOT explain. Just do it.')
+                      if (agentLoopActiveRef.current) {
+                        sendMessageInternal('Continue. Use your tools to make progress. If done, say "Complete."')
                       }
                     }, 300)
                   } else {
                     console.log(`[AgentLoop] Max iterations (${MAX_AGENT_ITERATIONS}) reached — stopping`)
                     agentLoopActiveRef.current = false
+                    ;(window as any).__nativeToolSession = false
                   }
-                }
-              }
-
-              // Autocode agent loop: continue if ANY operations were performed
-              const hasAnyOps = operations.length > 0
-              const hasRunOps = accumulated.includes('[RUN]') || accumulated.includes('[RUN:')
-              const hasPartialTag = /\[(?:READ|EDIT|RUN|FILE)(?::|\s*$)/m.test(accumulated)
-              // Native tool calls already triggered async results via pendingSendRef —
-              // DON'T also trigger continuation here, let the async results drive the loop
-              const shouldContinue = !hadNativeToolCalls && (hasAnyOps || hasRunOps || hasPartialTag)
-
-              console.log('[AgentLoop] Continuation check:', {
-                chatMode,
-                loopActive: agentLoopActiveRef.current,
-                hasAnyOps,
-                hasRunOps,
-                hasPartialTag,
-                hadNativeToolCalls,
-                shouldContinue,
-              })
-
-              if (chatMode === 'autocode' && agentLoopActiveRef.current && shouldContinue) {
-                agentLoopIterationsRef.current++
-                if (agentLoopIterationsRef.current < MAX_AGENT_ITERATIONS) {
-                  // Brief delay then continue
-                  setTimeout(() => {
-                    if (agentLoopActiveRef.current) {
-                      const readFiles = readOps.map(op => op.filePath).join(', ')
-                      const editFiles = writeOps.map(op => op.filePath).join(', ')
-                      const parts = [
-                        readFiles ? `Read: ${readFiles}` : '',
-                        editFiles ? `Applied edits to: ${editFiles}` : '',
-                      ].filter(Boolean).join('. ')
-                      let context = parts || 'Previous step processed'
-
-                      // If the response ended with a partial tag, extract what the AI was trying to do
-                      const partialMatch = accumulated.match(/\[(READ|EDIT|RUN|FILE):?([^\]\n]*)$/)
-                      if (partialMatch) {
-                        const tag = partialMatch[1]
-                        const arg = partialMatch[2]?.trim()
-                        if (arg) {
-                          context += `. You were about to [${tag}:${arg}] — complete that action now`
-                        } else {
-                          context += `. Your response was cut off mid-tag — continue from where you left off`
-                        }
+                } else if (hasCompleteTags) {
+                  // Text-tag operations found — continue loop
+                  agentLoopIterationsRef.current++
+                  if (agentLoopIterationsRef.current < MAX_AGENT_ITERATIONS) {
+                    setTimeout(() => {
+                      if (agentLoopActiveRef.current) {
+                        const readOps = operations.filter(op => op.type === 'read')
+                        const writeOps = operations.filter(op => op.type !== 'read')
+                        const readFiles = readOps.map(op => op.filePath).join(', ')
+                        const editFiles = writeOps.map(op => op.filePath).join(', ')
+                        const parts = [
+                          readFiles ? `Read: ${readFiles}` : '',
+                          editFiles ? `Applied edits to: ${editFiles}` : '',
+                        ].filter(Boolean).join('. ')
+                        const context = parts || 'Previous step processed'
+                        sendMessageInternal(`${context}. Continue — what's the next step? If done, say "Complete."`)
                       }
-
-                      // Send as hidden continuation (no user message bubble)
-                      sendMessageInternal(`${context}. Continue — what's the next step? Use [RUN:command] [READ:path] [EDIT:path] tags. If done, say "Complete."`)
-                    }
-                  }, 500)
+                    }, 500)
+                  }
+                } else {
+                  // No tools used, model not native — nudge
+                  agentLoopIterationsRef.current++
+                  const iter = agentLoopIterationsRef.current
+                  if (iter < MAX_AGENT_ITERATIONS) {
+                    console.log(`[AgentLoop] NUDGE #${iter}`)
+                    setTimeout(() => {
+                      if (agentLoopActiveRef.current) {
+                        sendMessageInternal('ACT NOW. Use [RUN:command] [READ:path] [EDIT:path] tags. Do NOT explain — just do it.')
+                      }
+                    }, 300)
+                  } else {
+                    agentLoopActiveRef.current = false
+                  }
                 }
               }
             }
@@ -1278,6 +1318,8 @@ export function useChat(): UseChatReturn {
     stopAgentLoop: useCallback(() => {
       agentLoopActiveRef.current = false
       agentLoopIterationsRef.current = 0
+      continuationPendingRef.current = false
+      ;(window as any).__nativeToolSession = false
       // Cancel the active streaming request if any
       if (activeStreamIdRef.current) {
         window.electronAPI?.cancelAIStream?.(activeStreamIdRef.current)

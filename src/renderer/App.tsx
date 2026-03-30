@@ -146,9 +146,17 @@ export const App: FC = () => {
   voiceSpeakRef.current = voice.speak
 
   useEffect(() => {
+    let lastTTSTime = 0
+    const TTS_COOLDOWN_MS = 15_000
+
     const handleTTSSummary = (event: any) => {
       const summary = event.detail as string
       if (!summary) return
+
+      const now = Date.now()
+      if (now - lastTTSTime < TTS_COOLDOWN_MS) return
+      lastTTSTime = now
+
       // Speak the summary via TTS
       if (ttsEnabledRef.current) {
         voiceSpeakRef.current(summary).catch(() => {})

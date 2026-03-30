@@ -112,6 +112,7 @@ export const AGENT_TOOLS = [
 export const TOOL_CALL_SENTINEL = '\x00TOOLCALL:'
 
 export interface ToolCallData {
+  readonly id?: string
   readonly name: string
   readonly arguments: Record<string, string>
 }

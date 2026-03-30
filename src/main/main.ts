@@ -19,6 +19,10 @@ import { execFileSync } from 'node:child_process';
 import { app, BrowserWindow, ipcMain } from 'electron';
 import { getSuperenvPath } from '../integrations/ecosystem.js';
 
+// Prevent EPIPE crashes from console.log when stdout/stderr pipe breaks
+process.stdout?.on?.('error', () => {});
+process.stderr?.on?.('error', () => {});
+
 // Load .env from project root before anything else
 // __dirname is dist/main/main/ so we go up 3 levels to project root
 config({ path: join(__dirname, '../../../.env') });

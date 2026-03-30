@@ -570,6 +570,25 @@ export function setupAllHandlers(
     }
   });
 
+  ipc.handle('edit-file', async (_event, filePath: string, search: string, replace: string) => {
+    const policy = validateWorkspacePath(filePath, { forWrite: true });
+    if (!policy.allowed) {
+      return { success: false, error: policy.error };
+    }
+    try {
+      const content = await fs.readFile(filePath, 'utf-8');
+      if (!content.includes(search)) {
+        return { success: false, error: 'Search text not found in file' };
+      }
+      const newContent = content.replace(search, replace);
+      await fs.writeFile(filePath, newContent, 'utf-8');
+      return { success: true };
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'Failed to edit file';
+      return { success: false, error: message };
+    }
+  });
+
   ipc.handle('delete-file', async (_event, filePath: string) => {
     const policy = validateWorkspacePath(filePath, { forWrite: true });
     if (!policy.allowed) {

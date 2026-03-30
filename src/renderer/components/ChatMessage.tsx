@@ -9,6 +9,7 @@
 import type { FC } from 'react'
 import ReactMarkdown from 'react-markdown'
 import type { ChatMessage } from '@/types/chat'
+import { renderToolCalls } from './ToolCallDisplay'
 
 // ---------------------------------------------------------------------------
 // Props
@@ -58,28 +59,40 @@ export const ChatMessageBubble: FC<ChatMessageBubbleProps> = ({ message }) => {
       {/* Message content */}
       <div className="chat-message__content">
         {isAssistant ? (
-          <ReactMarkdown
-            disallowedElements={['p']}
-            unwrapDisallowed
-            components={{
-              code({ inline, className, children, ...props }: any) {
-                if (inline) {
-                  return <code {...props}>{children}</code>
-                }
-                return (
-                  <div className="chat-message__code-block">
-                    <pre>
-                      <code className={className} {...props}>
-                        {children}
-                      </code>
-                    </pre>
-                  </div>
-                )
-              },
-            }}
-          >
-            {message.content}
-          </ReactMarkdown>
+          (() => {
+            const { cleanText, toolCalls } = renderToolCalls(message.content)
+            return (
+              <>
+                {toolCalls.length > 0 && (
+                  <div className="chat-message__tool-calls">{toolCalls}</div>
+                )}
+                {cleanText && (
+                  <ReactMarkdown
+                    disallowedElements={['p']}
+                    unwrapDisallowed
+                    components={{
+                      code({ inline, className, children, ...props }: any) {
+                        if (inline) {
+                          return <code {...props}>{children}</code>
+                        }
+                        return (
+                          <div className="chat-message__code-block">
+                            <pre>
+                              <code className={className} {...props}>
+                                {children}
+                              </code>
+                            </pre>
+                          </div>
+                        )
+                      },
+                    }}
+                  >
+                    {cleanText}
+                  </ReactMarkdown>
+                )}
+              </>
+            )
+          })()
         ) : (
           message.content
         )}
