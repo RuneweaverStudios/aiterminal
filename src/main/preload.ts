@@ -319,6 +319,21 @@ const electronAPI: ElectronAPI = {
     ipcRenderer.invoke('memory-tool', args),
 
   // --- Transcript search and retrieval ---
+  transcriptCreateSession: (params: { id: string; intern: string; task: string; workspace?: string }) =>
+    ipcRenderer.invoke('transcript:create-session', params),
+
+  transcriptAddMessage: (params: { sessionId: string; role: 'user' | 'assistant' | 'system' | 'tool'; content: string }) =>
+    ipcRenderer.invoke('transcript:add-message', params),
+
+  transcriptAddEvent: (params: { sessionId: string; stream: string; data: Record<string, unknown> }) =>
+    ipcRenderer.invoke('transcript:add-event', params),
+
+  transcriptEndSession: (sessionId: string, status: 'completed' | 'failed' | 'timeout') =>
+    ipcRenderer.invoke('transcript:end-session', sessionId, status),
+
+  transcriptSearchContext: (query: string, workspace?: string) =>
+    ipcRenderer.invoke('transcript:search-for-context', query, workspace),
+
   transcriptSearch: (query: string, limit?: number) =>
     ipcRenderer.invoke('transcript:search', query, limit),
 

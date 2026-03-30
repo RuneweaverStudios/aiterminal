@@ -271,6 +271,13 @@ export interface ElectronAPI {
     usage?: { chars: number; limit: number; percent: number };
   }>;
 
+  // --- Transcript write (agent loop session persistence) ---
+  transcriptCreateSession: (params: { id: string; intern: string; task: string; workspace?: string }) => Promise<{ success: boolean; error?: string }>;
+  transcriptAddMessage: (params: { sessionId: string; role: 'user' | 'assistant' | 'system' | 'tool'; content: string }) => Promise<{ success: boolean; error?: string }>;
+  transcriptAddEvent: (params: { sessionId: string; stream: string; data: Record<string, unknown> }) => Promise<{ success: boolean; error?: string }>;
+  transcriptEndSession: (sessionId: string, status: 'completed' | 'failed' | 'timeout') => Promise<{ success: boolean; error?: string }>;
+  transcriptSearchContext: (query: string, workspace?: string) => Promise<{ success: boolean; context: string; error?: string }>;
+
   // --- Transcript search and retrieval ---
   transcriptSearch: (query: string, limit?: number) => Promise<{
     success: boolean;

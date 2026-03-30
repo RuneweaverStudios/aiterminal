@@ -249,6 +249,19 @@ app.whenReady().then(() => {
 
   const aiClient = createAIClient();
 
+  // Clean up orphaned transcript sessions from previous crash
+  try {
+    const { getTranscriptDb } = require('../agent-loop/transcript-db');
+    const db = getTranscriptDb();
+    const running = db.getRecentSessions(100).filter((s: any) => s.status === 'running');
+    for (const session of running) {
+      db.endSession(session.id, 'timeout');
+    }
+    if (running.length > 0) {
+      console.log(`[main] Cleaned up ${running.length} orphaned transcript sessions`);
+    }
+  } catch { /* transcript DB not available */ }
+
   // Wire all IPC handlers. If no AI client is available (missing API key),
   // create a stub that returns helpful error messages.
   const client = aiClient ?? createStubAIClient();

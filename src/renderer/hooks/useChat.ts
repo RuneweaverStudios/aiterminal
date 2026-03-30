@@ -469,16 +469,57 @@ export function useChat(): UseChatReturn {
   const fileContextRef = useRef<Map<string, string>>(new Map())
   const sessionHistory = useSessionHistory()
   const agentLoopActiveRef = useRef(false)
-  const setAgentLoopActive = (active: boolean) => {
+  const setAgentLoopActive = (active: boolean, endStatus?: 'completed' | 'failed' | 'timeout') => {
     agentLoopActiveRef.current = active
     setIsLooping(active)
+    // L2: End transcript session when loop stops
+    if (!active && transcriptSessionIdRef.current) {
+      const sessionId = transcriptSessionIdRef.current
+      const status = endStatus || 'completed'
+      // Flush remaining events
+      flushEvents()
+      // Write final action log summary
+      const api = window.electronAPI
+      if (actionLogRef.current.length > 0) {
+        api?.transcriptAddMessage?.({
+          sessionId,
+          role: 'system',
+          content: `Action summary:\n${actionLogRef.current.join('\n')}`,
+        }).catch(() => {})
+      }
+      api?.transcriptEndSession?.(sessionId, status).catch(() => {})
+      transcriptSessionIdRef.current = null
+    }
   }
   const agentLoopIterationsRef = useRef(0)
   const activeStreamIdRef = useRef<string | null>(null)
   // Running action log for agent loop — prevents model from repeating actions
   const actionLogRef = useRef<string[]>([])
   const continuationPendingRef = useRef(false)
+  // Transcript session for episodic memory (L2)
+  const transcriptSessionIdRef = useRef<string | null>(null)
+  const eventBatchRef = useRef<Array<{ stream: string; data: Record<string, unknown> }>>([])
   const MAX_AGENT_ITERATIONS = 100
+
+  // Flush batched events to TranscriptDatabase
+  const flushEvents = useCallback(async () => {
+    const sessionId = transcriptSessionIdRef.current
+    const api = window.electronAPI
+    if (!sessionId || !api?.transcriptAddEvent || eventBatchRef.current.length === 0) return
+    const batch = [...eventBatchRef.current]
+    eventBatchRef.current = []
+    for (const evt of batch) {
+      await api.transcriptAddEvent({ sessionId, stream: evt.stream, data: evt.data }).catch(() => {})
+    }
+  }, [])
+
+  // Queue an event for batched write (flushes every 5 events)
+  const queueEvent = useCallback((stream: string, data: Record<string, unknown>) => {
+    eventBatchRef.current.push({ stream, data })
+    if (eventBatchRef.current.length >= 5) {
+      flushEvents()
+    }
+  }, [flushEvents])
 
   const cycleChatMode = useCallback(() => {
     setChatMode(prev => {
@@ -588,18 +629,36 @@ export function useChat(): UseChatReturn {
         if (!_hidden) {
           agentLoopIterationsRef.current = 0
           actionLogRef.current = []
+          eventBatchRef.current = []
           ;(window as any).__nativeToolSession = false
           ;(window as any).__doomLoopState = { lastSig: '', count: 0 }
+
+          // L2: Create transcript session for episodic memory
+          const sessionId = `chat-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+          transcriptSessionIdRef.current = sessionId
+          const agentState = getAgentLoopState()
+          const api = window.electronAPI
+          api?.transcriptCreateSession?.({
+            id: sessionId,
+            intern: agentState?.activeIntern || DEFAULT_INTERN_ID,
+            task: trimmed.slice(0, 500),
+            workspace: agentState?.cwd as string | undefined,
+          }).catch(() => {})
+          // L2: Persist user message
+          api?.transcriptAddMessage?.({
+            sessionId,
+            role: 'user',
+            content: trimmed,
+          }).catch(() => {})
         }
       }
 
-      // Update system prompt with active intern + CWD before sending
+      // L4: Refresh system prompt with latest memory (frozen snapshot pattern)
       const api = window.electronAPI
       if (api?.updateInternSystemPrompt) {
         const agentState = getAgentLoopState()
         const activeIntern = agentState?.activeIntern || DEFAULT_INTERN_ID
         const cwd = agentState?.cwd as string | undefined
-        // System prompt update — no hot-path logging
         await api.updateInternSystemPrompt({ intern: activeIntern, cwd })
       }
 
@@ -633,7 +692,20 @@ export function useChat(): UseChatReturn {
         ? '[AUTOCODE MODE] You have full autonomy. ALWAYS start your response with a brief one-line statement, THEN use tool tags.\n\nCRITICAL: Tool tags MUST appear OUTSIDE any <think> blocks. Do NOT put [RUN:], [READ:], or [EDIT:] inside <think> tags — they will not execute.\n\nExample response:\nRunning the test suite.\n[RUN:pytest -v]\n\nUse [READ:path] to read files, [EDIT:path] to fix code, [RUN:command] to execute. Act immediately. Never describe — execute.\n\n'
         : 'ALWAYS start with a brief statement of what you are doing, THEN use tool tags.\n\nCRITICAL: Tool tags MUST appear OUTSIDE any <think> blocks. Put [RUN:command], [READ:path], [EDIT:path] tags in your visible response, not inside reasoning.\n\n'
 
-      const allContext = [persistentFiles, fileContext].filter(Boolean).join('\n\n')
+      // L3: Inject past session context for non-hidden messages
+      let pastSessionContext = ''
+      if (!_hidden && chatMode === 'autocode' && api?.transcriptSearchContext) {
+        try {
+          const agentState = getAgentLoopState()
+          const result = await api.transcriptSearchContext(trimmed, agentState?.cwd as string | undefined)
+          if (result.success && result.context) {
+            pastSessionContext = result.context
+            console.log('[Memory] Injecting past session context')
+          }
+        } catch { /* skip */ }
+      }
+
+      const allContext = [pastSessionContext, persistentFiles, fileContext].filter(Boolean).join('\n\n')
       const fullPrompt = modePrefix + (allContext
         ? `${allContext}\n\n${trimmed}`
         : trimmed)
@@ -894,6 +966,15 @@ export function useChat(): UseChatReturn {
               }
             }
 
+            // L2: Persist assistant response to transcript
+            if (transcriptSessionIdRef.current && accumulated.length > 0) {
+              window.electronAPI?.transcriptAddMessage?.({
+                sessionId: transcriptSessionIdRef.current,
+                role: 'assistant',
+                content: accumulated.slice(0, 10_000),
+              }).catch(() => {})
+            }
+
             // If native tool calls were used, skip text-based tag parsing entirely.
             const hadNativeToolCalls = nativeToolCalls.length > 0
             // Mark this model session as native-tool-capable for future turns
@@ -940,7 +1021,7 @@ export function useChat(): UseChatReturn {
               }
               if (doomState.count >= 3) {
                 console.warn(`[AgentLoop] DOOM LOOP detected — same batch repeated ${doomState.count} consecutive times, stopping`)
-                setAgentLoopActive(false)
+                setAgentLoopActive(false, 'failed')
                 ;(window as any).__nativeToolSession = false
                 ;(window as any).__doomLoopState = { lastSig: '', count: 0 }
                 const doomMsg = createAssistantMessage('Loop stopped — repeated the same action 3 times without progress.')
@@ -1003,6 +1084,7 @@ export function useChat(): UseChatReturn {
                   displayParts.push(`⚡ \`${cmd}\` ${status}`)
                   modelParts.push(`Output from \`${cmd}\` (exit ${exitCode}):\n\`\`\`\n${important || '(no output)'}\n\`\`\``)
                   actionLogRef.current.push(`ran: ${cmd} (exit ${exitCode})`)
+                  queueEvent('tool:run', { command: cmd, exitCode })
                 }
               }
 
@@ -1021,11 +1103,13 @@ export function useChat(): UseChatReturn {
                       displayParts.push(`📄 Read **${args.path}** — ${lines} lines`)
                       modelParts.push(`Read \`${args.path}\` (${lines} lines, complete file):\n\`\`\`\n${preview}\n\`\`\``)
                       actionLogRef.current.push(`read: ${args.path} (${lines} lines)`)
+                      queueEvent('tool:read', { path: args.path, lines })
                     } else {
                       const msg = `Failed to read \`${args.path}\`: ${result.error || 'empty'}`
                       displayParts.push(msg)
                       modelParts.push(msg)
                       actionLogRef.current.push(`read FAILED: ${args.path} — ${result.error || 'empty'}`)
+                      queueEvent('tool:error', { tool: 'read_file', path: args.path, error: result.error || 'empty' })
                     }
                   } else if (name === 'edit_file' && args.path && args.search !== undefined && args.replace !== undefined) {
                     const fullPath = resolvePath(args.path)
@@ -1034,11 +1118,13 @@ export function useChat(): UseChatReturn {
                       displayParts.push(`✅ **${args.path}**`)
                       modelParts.push(`Applied edit to \`${args.path}\``)
                       actionLogRef.current.push(`edited: ${args.path}`)
+                      queueEvent('tool:edit', { path: args.path })
                     } else {
                       const msg = `❌ edit ${args.path}: ${result.error}`
                       displayParts.push(msg)
                       modelParts.push(`Edit failed for \`${args.path}\`: ${result.error}`)
                       actionLogRef.current.push(`edit FAILED: ${args.path} — ${result.error}`)
+                      queueEvent('tool:error', { tool: 'edit_file', path: args.path, error: result.error })
                     }
                   } else if (name === 'create_file' && args.path && args.content !== undefined) {
                     const fullPath = resolvePath(args.path)
@@ -1047,6 +1133,7 @@ export function useChat(): UseChatReturn {
                       displayParts.push(`✅ ${args.path}`)
                       modelParts.push(`Created \`${args.path}\``)
                       actionLogRef.current.push(`created: ${args.path}`)
+                      queueEvent('tool:create', { path: args.path })
                     } else {
                       const msg = `❌ create ${args.path}: ${result.error}`
                       displayParts.push(msg)
