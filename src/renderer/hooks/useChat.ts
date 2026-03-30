@@ -930,6 +930,21 @@ export function useChat(): UseChatReturn {
                 ),
               )
 
+              // Resolve relative paths against the active terminal CWD
+              const sessionId = getAgentLoopState().activeSessionId
+              let cwd = ''
+              if (sessionId && window.electronAPI?.getSessionCwd) {
+                try {
+                  const cwdResult = await window.electronAPI.getSessionCwd(sessionId)
+                  if (cwdResult.success && cwdResult.cwd) cwd = cwdResult.cwd
+                } catch { /* fallback to empty */ }
+              }
+              const resolvePath = (p: string): string => {
+                if (!p) return p
+                if (p.startsWith('/')) return p
+                return cwd ? `${cwd}/${p}` : p
+              }
+
               // Execute all tool calls sequentially, collect results
               // displayParts: compact one-liners for the chat UI
               // modelParts: full context for the model continuation
@@ -939,7 +954,8 @@ export function useChat(): UseChatReturn {
                 const { name, arguments: args } = tc
                 try {
                   if (name === 'read_file' && args.path) {
-                    const result = await window.electronAPI.readFile(args.path)
+                    const fullPath = resolvePath(args.path)
+                    const result = await window.electronAPI.readFile(fullPath)
                     if (result.content) {
                       fileContextRef.current.set(args.path, result.content.slice(0, 5000))
                       const lines = result.content.split('\n').length
@@ -961,7 +977,8 @@ export function useChat(): UseChatReturn {
                       modelParts.push(`Output from \`${args.command}\`:\n\`\`\`\n${important || '(no output)'}\n\`\`\``)
                     }
                   } else if (name === 'edit_file' && args.path && args.search !== undefined && args.replace !== undefined) {
-                    const result = await window.electronAPI.editFile(args.path, args.search, args.replace)
+                    const fullPath = resolvePath(args.path)
+                    const result = await window.electronAPI.editFile(fullPath, args.search, args.replace)
                     if (result.success) {
                       displayParts.push(`✅ **${args.path}**`)
                       modelParts.push(`Applied edit to \`${args.path}\``)
@@ -971,7 +988,8 @@ export function useChat(): UseChatReturn {
                       modelParts.push(`Edit failed for \`${args.path}\`: ${result.error}`)
                     }
                   } else if (name === 'create_file' && args.path && args.content !== undefined) {
-                    const result = await window.electronAPI.writeFile(args.path, args.content)
+                    const fullPath = resolvePath(args.path)
+                    const result = await window.electronAPI.writeFile(fullPath, args.content)
                     if (result.success) {
                       displayParts.push(`✅ ${args.path}`)
                       modelParts.push(`Created \`${args.path}\``)
@@ -981,7 +999,8 @@ export function useChat(): UseChatReturn {
                       modelParts.push(`Failed to create \`${args.path}\`: ${result.error}`)
                     }
                   } else if (name === 'delete_file' && args.path) {
-                    const result = await window.electronAPI.deleteFile(args.path)
+                    const fullPath = resolvePath(args.path)
+                    const result = await window.electronAPI.deleteFile(fullPath)
                     if (result.success) {
                       displayParts.push(`🗑 ${args.path}`)
                       modelParts.push(`Deleted \`${args.path}\``)

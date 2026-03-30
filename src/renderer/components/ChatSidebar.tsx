@@ -221,20 +221,21 @@ export const ChatSidebar: FC<ChatSidebarProps> = ({
           <ChatMessageBubble key={msg.id} message={msg} />
         ))}
 
-        {/* Streaming indicator — always rendered below messages to prevent layout jumps */}
-        <div
-          className="chat-streaming-indicator"
-          data-testid="chat-streaming-indicator"
-          style={{ visibility: state.isStreaming ? 'visible' : 'hidden' }}
-        >
-          <div className="ai-loading__dots">
-            <span className="ai-loading__dot" />
-            <span className="ai-loading__dot" />
-            <span className="ai-loading__dot" />
-          </div>
-        </div>
-
         <div ref={messagesEndRef} />
+      </div>
+
+      {/* Status line — fixed height, never causes layout shift */}
+      <div className="chat-status-line" data-testid="chat-streaming-indicator">
+        {state.isStreaming && (
+          <>
+            <div className="ai-loading__dots">
+              <span className="ai-loading__dot" />
+              <span className="ai-loading__dot" />
+              <span className="ai-loading__dot" />
+            </div>
+            <span className="chat-status-line__text">Thinking...</span>
+          </>
+        )}
       </div>
 
       {/* Input area */}
