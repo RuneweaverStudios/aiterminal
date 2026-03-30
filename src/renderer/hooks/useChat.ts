@@ -777,6 +777,22 @@ export function useChat(): UseChatReturn {
                 if ((payload as any).toolCall) {
                   try {
                     const tc = JSON.parse((payload as any).toolCall)
+                    // Normalize tool names — budget models send READ/RUN/EDIT instead of read_file/run_command/edit_file
+                    const nameMap: Record<string, string> = {
+                      READ: 'read_file', read: 'read_file', Read: 'read_file',
+                      RUN: 'run_command', run: 'run_command', Run: 'run_command',
+                      EDIT: 'edit_file', edit: 'edit_file', Edit: 'edit_file',
+                      CREATE: 'create_file', create: 'create_file', Create: 'create_file',
+                      DELETE: 'delete_file', delete: 'delete_file', Delete: 'delete_file',
+                      write_file: 'create_file', WRITE: 'create_file',
+                    }
+                    tc.name = nameMap[tc.name] || tc.name
+                    // Normalize argument keys — budget models may use 'file'/'cmd' instead of 'path'/'command'
+                    if (tc.arguments) {
+                      if (tc.arguments.file && !tc.arguments.path) tc.arguments.path = tc.arguments.file
+                      if (tc.arguments.cmd && !tc.arguments.command) tc.arguments.command = tc.arguments.cmd
+                      if (tc.arguments.filename && !tc.arguments.path) tc.arguments.path = tc.arguments.filename
+                    }
                     nativeToolCalls.push(tc)
                     console.log('[useChat] Native tool call received:', tc.name, tc.arguments)
                   } catch (e) {
@@ -883,15 +899,20 @@ export function useChat(): UseChatReturn {
             }
 
             let afterRunTags: string
-            if (hadNativeToolCalls) {
-              console.log(`[useChat] ${nativeToolCalls.length} native tool calls — executing batch`)
-              afterRunTags = stripAllToolTags(accumulated)
-            } else {
-              // Fallback: parse text-based tags for models that don't support function calling
-              const unwrapped = accumulated
-                .replace(/<\/?think>/g, '')
-                .replace(/<\/?thinking>/g, '')
-              afterRunTags = applyRunTags(unwrapped)
+            // Always parse text-based tags from accumulated text — budget models
+            // mix native tool calls with text tags (e.g. native read_file + text [EDIT:])
+            const unwrapped = accumulated
+              .replace(/<\/?think>/g, '')
+              .replace(/<\/?thinking>/g, '')
+            afterRunTags = hadNativeToolCalls
+              ? stripAllToolTags(accumulated)
+              : applyRunTags(unwrapped)
+
+            // Extract text-based file operations even when native calls are present
+            // This handles hybrid mode: native read_file + text [EDIT:]
+            const textOps = parseAgentResponse(unwrapped)
+            if (hadNativeToolCalls && textOps.length > 0) {
+              console.log(`[useChat] Hybrid mode: ${nativeToolCalls.length} native + ${textOps.length} text-tag operations`)
             }
 
             // Process memory tags on think-stripped text (don't save reasoning as memories)
@@ -904,11 +925,15 @@ export function useChat(): UseChatReturn {
             // NATIVE TOOL CALL EXECUTION (batched, sequential, single continuation)
             // ---------------------------------------------------------------
             if (hadNativeToolCalls && chatMode === 'autocode' && agentLoopActiveRef.current) {
-              // Doom loop detection: if the same tool calls repeat 3+ times, stop
-              const callSig = nativeToolCalls.map(tc => `${tc.name}:${JSON.stringify(tc.arguments)}`).sort().join('|')
+              // Doom loop detection: if any individual tool call repeats 3+ times, stop
               const doomMap: Record<string, number> = (window as any).__doomLoopMap ??= {}
-              doomMap[callSig] = (doomMap[callSig] || 0) + 1
-              if (doomMap[callSig] >= 3) {
+              let doomDetected = false
+              for (const tc of nativeToolCalls) {
+                const sig = `${tc.name}:${JSON.stringify(tc.arguments)}`
+                doomMap[sig] = (doomMap[sig] || 0) + 1
+                if (doomMap[sig] >= 3) doomDetected = true
+              }
+              if (doomDetected) {
                 console.warn(`[AgentLoop] DOOM LOOP detected — same tool calls repeated ${doomMap[callSig]} times, stopping`)
                 setAgentLoopActive(false)
                 ;(window as any).__nativeToolSession = false
@@ -1014,6 +1039,34 @@ export function useChat(): UseChatReturn {
                   const msg = `Error executing ${name}: ${e instanceof Error ? e.message : 'unknown'}`
                   displayParts.push(msg)
                   modelParts.push(msg)
+                }
+              }
+
+              // Execute any text-based file operations (hybrid mode: native reads + text edits)
+              if (textOps.length > 0) {
+                const readOps = textOps.filter(op => op.type === 'read')
+                const writeOps = textOps.filter(op => op.type !== 'read')
+                for (const readOp of readOps) {
+                  try {
+                    const fullPath = resolvePath(readOp.filePath)
+                    const result = await window.electronAPI.readFile(fullPath)
+                    if (result.content) {
+                      fileContextRef.current.set(readOp.filePath, result.content.slice(0, 5000))
+                      displayParts.push(`📄 Read **${readOp.filePath}** — ${result.content.split('\n').length} lines`)
+                      modelParts.push(`Read \`${readOp.filePath}\``)
+                    }
+                  } catch { /* skip */ }
+                }
+                for (const op of writeOps) {
+                  const fullPath = resolvePath(op.filePath)
+                  const result = await applyOperation({ ...op, filePath: fullPath })
+                  if (result.success) {
+                    displayParts.push(`✅ ${op.type} ${op.filePath}`)
+                    modelParts.push(`Applied ${op.type} to \`${op.filePath}\``)
+                  } else {
+                    displayParts.push(`❌ ${op.type} ${op.filePath}: ${result.error}`)
+                    modelParts.push(`${op.type} failed for \`${op.filePath}\`: ${result.error}`)
+                  }
                 }
               }
 
