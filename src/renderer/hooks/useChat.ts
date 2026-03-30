@@ -475,6 +475,8 @@ export function useChat(): UseChatReturn {
   }
   const agentLoopIterationsRef = useRef(0)
   const activeStreamIdRef = useRef<string | null>(null)
+  // Running action log for agent loop — prevents model from repeating actions
+  const actionLogRef = useRef<string[]>([])
   const continuationPendingRef = useRef(false)
   const MAX_AGENT_ITERATIONS = 100
 
@@ -585,6 +587,7 @@ export function useChat(): UseChatReturn {
         // Reset iterations only on genuine user-initiated messages (not nudges/continuations)
         if (!_hidden) {
           agentLoopIterationsRef.current = 0
+          actionLogRef.current = []
           ;(window as any).__nativeToolSession = false
           ;(window as any).__doomLoopState = { lastSig: '', count: 0 }
         }
@@ -999,6 +1002,7 @@ export function useChat(): UseChatReturn {
                   const status = exitCode === 0 ? '✓' : `✗ exit ${exitCode}`
                   displayParts.push(`⚡ \`${cmd}\` ${status}`)
                   modelParts.push(`Output from \`${cmd}\` (exit ${exitCode}):\n\`\`\`\n${important || '(no output)'}\n\`\`\``)
+                  actionLogRef.current.push(`ran: ${cmd} (exit ${exitCode})`)
                 }
               }
 
@@ -1015,11 +1019,13 @@ export function useChat(): UseChatReturn {
                       const lines = result.content.split('\n').length
                       const preview = result.content.slice(0, 2000)
                       displayParts.push(`📄 Read **${args.path}** — ${lines} lines`)
-                      modelParts.push(`Read \`${args.path}\` (${lines} lines):\n\`\`\`\n${preview}\n\`\`\``)
+                      modelParts.push(`Read \`${args.path}\` (${lines} lines, complete file):\n\`\`\`\n${preview}\n\`\`\``)
+                      actionLogRef.current.push(`read: ${args.path} (${lines} lines)`)
                     } else {
                       const msg = `Failed to read \`${args.path}\`: ${result.error || 'empty'}`
                       displayParts.push(msg)
                       modelParts.push(msg)
+                      actionLogRef.current.push(`read FAILED: ${args.path} — ${result.error || 'empty'}`)
                     }
                   } else if (name === 'edit_file' && args.path && args.search !== undefined && args.replace !== undefined) {
                     const fullPath = resolvePath(args.path)
@@ -1027,10 +1033,12 @@ export function useChat(): UseChatReturn {
                     if (result.success) {
                       displayParts.push(`✅ **${args.path}**`)
                       modelParts.push(`Applied edit to \`${args.path}\``)
+                      actionLogRef.current.push(`edited: ${args.path}`)
                     } else {
                       const msg = `❌ edit ${args.path}: ${result.error}`
                       displayParts.push(msg)
                       modelParts.push(`Edit failed for \`${args.path}\`: ${result.error}`)
+                      actionLogRef.current.push(`edit FAILED: ${args.path} — ${result.error}`)
                     }
                   } else if (name === 'create_file' && args.path && args.content !== undefined) {
                     const fullPath = resolvePath(args.path)
@@ -1038,6 +1046,7 @@ export function useChat(): UseChatReturn {
                     if (result.success) {
                       displayParts.push(`✅ ${args.path}`)
                       modelParts.push(`Created \`${args.path}\``)
+                      actionLogRef.current.push(`created: ${args.path}`)
                     } else {
                       const msg = `❌ create ${args.path}: ${result.error}`
                       displayParts.push(msg)
@@ -1115,7 +1124,11 @@ export function useChat(): UseChatReturn {
                 agentLoopIterationsRef.current++
                 if (agentLoopIterationsRef.current < MAX_AGENT_ITERATIONS) {
                   console.log(`[AgentLoop] Native continuation #${agentLoopIterationsRef.current} with ${modelParts.length} results`)
-                  const continuation = modelParts.join('\n\n') + '\n\nBriefly note the results, then continue with the next step. If done, say "Complete."'
+                  // Include action history so model doesn't repeat completed actions
+                  const historyContext = actionLogRef.current.length > 0
+                    ? `\n\nActions completed so far:\n${actionLogRef.current.map(a => `- ${a}`).join('\n')}\n\nDo NOT repeat actions already completed.`
+                    : ''
+                  const continuation = modelParts.join('\n\n') + historyContext + '\n\nBriefly note the results, then continue with the next step. If done, say "Complete."'
                   setTimeout(() => {
                     if (agentLoopActiveRef.current) {
                       sendMessageInternal(continuation)
