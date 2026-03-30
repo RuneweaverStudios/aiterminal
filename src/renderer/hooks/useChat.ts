@@ -463,11 +463,16 @@ export function useChat(): UseChatReturn {
   const [activePresetLabel, setActivePresetLabel] = useState<string | undefined>(undefined)
   const [pendingFileOps, setPendingFileOps] = useState<ReadonlyArray<FileOperation>>([])
   const [chatMode, setChatMode] = useState<ChatMode>('normal')
+  const [isLooping, setIsLooping] = useState(false)
   const pendingSendRef = useRef<((msg: string) => Promise<void>) | null>(null)
   // Persistent file context — survives message window eviction
   const fileContextRef = useRef<Map<string, string>>(new Map())
   const sessionHistory = useSessionHistory()
   const agentLoopActiveRef = useRef(false)
+  const setAgentLoopActive = (active: boolean) => {
+    agentLoopActiveRef.current = active
+    setIsLooping(active)
+  }
   const agentLoopIterationsRef = useRef(0)
   const activeStreamIdRef = useRef<string | null>(null)
   const continuationPendingRef = useRef(false)
@@ -576,11 +581,12 @@ export function useChat(): UseChatReturn {
 
       // Start agent loop in autocode mode
       if (chatMode === 'autocode') {
-        agentLoopActiveRef.current = true
+        setAgentLoopActive(true)
         // Reset iterations only on genuine user-initiated messages (not nudges/continuations)
         if (!_hidden) {
           agentLoopIterationsRef.current = 0
           ;(window as any).__nativeToolSession = false
+          ;(window as any).__doomLoopMap = {}
         }
       }
 
@@ -898,6 +904,26 @@ export function useChat(): UseChatReturn {
             // NATIVE TOOL CALL EXECUTION (batched, sequential, single continuation)
             // ---------------------------------------------------------------
             if (hadNativeToolCalls && chatMode === 'autocode' && agentLoopActiveRef.current) {
+              // Doom loop detection: if the same tool calls repeat 3+ times, stop
+              const callSig = nativeToolCalls.map(tc => `${tc.name}:${JSON.stringify(tc.arguments)}`).sort().join('|')
+              const doomMap: Record<string, number> = (window as any).__doomLoopMap ??= {}
+              doomMap[callSig] = (doomMap[callSig] || 0) + 1
+              if (doomMap[callSig] >= 3) {
+                console.warn(`[AgentLoop] DOOM LOOP detected — same tool calls repeated ${doomMap[callSig]} times, stopping`)
+                setAgentLoopActive(false)
+                ;(window as any).__nativeToolSession = false
+                ;(window as any).__doomLoopMap = {}
+                const doomMsg = createAssistantMessage('Loop stopped — repeated the same action 3 times without progress.')
+                setMessages((prev) => [...prev, doomMsg].slice(-MAX_MESSAGES))
+                // fall through to display the accumulated text
+                setMessages((prev) =>
+                  prev.map((m) =>
+                    m.id === placeholderId ? { ...m, content: afterRunTags } : m,
+                  ),
+                )
+              }
+            }
+            if (hadNativeToolCalls && chatMode === 'autocode' && agentLoopActiveRef.current) {
               setMessages((prev) =>
                 prev.map((m) =>
                   m.id === placeholderId ? { ...m, content: afterRunTags } : m,
@@ -989,7 +1015,7 @@ export function useChat(): UseChatReturn {
               const isDone = /(?:task|everything|all\s+\w+\s+is)\s+(?:complete|done|finished)|^complete\.?$/im.test(accumulated)
               if (isDone) {
                 console.log('[AgentLoop] STOPPING — AI signaled completion (native path)')
-                agentLoopActiveRef.current = false
+                setAgentLoopActive(false)
               }
 
               // Send ONE batched continuation with all results (full context for model)
@@ -1005,7 +1031,7 @@ export function useChat(): UseChatReturn {
                   }, 300)
                 } else {
                   console.log(`[AgentLoop] Max iterations (${MAX_AGENT_ITERATIONS}) reached — stopping`)
-                  agentLoopActiveRef.current = false
+                  setAgentLoopActive(false)
                 }
               }
             } else if (hadNativeToolCalls) {
@@ -1082,13 +1108,13 @@ export function useChat(): UseChatReturn {
 
                 if (isDone && !hasCompleteTags) {
                   console.log('[AgentLoop] STOPPING — AI signaled completion')
-                  agentLoopActiveRef.current = false
+                  setAgentLoopActive(false)
                   ;(window as any).__nativeToolSession = false
                 } else if (strippedContent.length === 0 && !hasCompleteTags && !modelUsesNativeTools) {
                   // Only stop on empty response for non-native models.
                   // Native models may return empty between concurrent continuation turns.
                   console.log('[AgentLoop] STOPPING — truly empty response (non-native model)')
-                  agentLoopActiveRef.current = false
+                  setAgentLoopActive(false)
                   ;(window as any).__nativeToolSession = false
                 } else if (modelUsesNativeTools) {
                   // Model uses native tool calls but this turn had text only —
@@ -1103,7 +1129,7 @@ export function useChat(): UseChatReturn {
                     }, 300)
                   } else {
                     console.log(`[AgentLoop] Max iterations (${MAX_AGENT_ITERATIONS}) reached — stopping`)
-                    agentLoopActiveRef.current = false
+                    setAgentLoopActive(false)
                     ;(window as any).__nativeToolSession = false
                   }
                 } else if (hasCompleteTags) {
@@ -1137,7 +1163,7 @@ export function useChat(): UseChatReturn {
                       }
                     }, 300)
                   } else {
-                    agentLoopActiveRef.current = false
+                    setAgentLoopActive(false)
                   }
                 }
               }
@@ -1316,7 +1342,7 @@ export function useChat(): UseChatReturn {
     rejectFileOps,
     cycleChatMode,
     stopAgentLoop: useCallback(() => {
-      agentLoopActiveRef.current = false
+      setAgentLoopActive(false)
       agentLoopIterationsRef.current = 0
       continuationPendingRef.current = false
       ;(window as any).__nativeToolSession = false
@@ -1326,7 +1352,7 @@ export function useChat(): UseChatReturn {
         activeStreamIdRef.current = null
       }
     }, []),
-    isAgentLooping: isStreaming && agentLoopActiveRef.current,
+    isAgentLooping: isLooping,
     revertToSnapshot: useCallback((snapshotId: string) => {
       const restored = sessionHistory.revert(snapshotId)
       if (restored) {
