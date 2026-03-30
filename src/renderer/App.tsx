@@ -41,7 +41,6 @@ import { ClaudeCodeChat } from '@/renderer/components/ClaudeCodeChat'
 import { AutocompleteDropdown } from '@/renderer/components/AutocompleteDropdown'
 import { FilePreview } from '@/renderer/components/FilePreview'
 import { FilePicker } from '@/renderer/components/FilePicker'
-import { AgentMode } from '@/renderer/components/AgentMode'
 import { InternAvatar } from '@/renderer/components/InternAvatar'
 import { SplitSidebar } from '@/renderer/components/SplitSidebar'
 import { GatewayVoiceStrip } from '@/renderer/components/GatewayVoiceStrip'
@@ -56,7 +55,6 @@ import { AVAILABLE_VRM_MODELS } from '@/renderer/vrm-models'
 
 // Shell helpers
 import {
-  isNaturalLanguage,
   isTuiCliInvocation,
   shouldAutoEnableTuiFromPtyOutput,
 } from '@/shell/shell-service'
@@ -177,7 +175,6 @@ export const App: FC = () => {
   }, [backendSelector.activeBackend, chat.state.isOpen])
 
   // NL routing toast
-  const [nlToast, setNlToast] = useState<string | null>(null)
 
   // Terminal visibility when in Claude Code mode
   const [terminalVisibleInClaudeCode, setTerminalVisibleInClaudeCode] = useState(false)
@@ -466,24 +463,12 @@ export const App: FC = () => {
       claudeCodeComments.activate()
     }
 
-    // Skip natural language detection when in TUI mode (read ref, not stale state)
-    if (!tuiModeRef.current && isNaturalLanguage(sanitized)) {
-      // Show brief toast so the user knows their input was routed
-      setNlToast(sanitized)
-      setTimeout(() => setNlToast(null), 2500)
-
-      // Route to chat sidebar — auto-opens and sends as a chat message
-      chat.injectFromTerminal(sanitized) // fire-and-forget (async)
-      return true // signal TerminalView to NOT send Enter to PTY
-    }
-
-    // Shell commands go directly through PTY — save for error detection
+    // All input goes directly to PTY — save for error/cd detection
     lastCommandRef.current = sanitized
     return false
-  }, [chat.injectFromTerminal])
+  }, [])
 
-  // Monitor PTY output for error patterns → route to chat sidebar
-  // Also detect successful cd commands to update file tree
+  // Monitor PTY output for cd commands to update file tree
   const handlePtyOutput = useCallback((data: string) => {
     if (!tuiModeRef.current && shouldAutoEnableTuiFromPtyOutput(data)) {
       tuiModeRef.current = true
@@ -494,24 +479,8 @@ export const App: FC = () => {
     // a TUI app (Claude Code, vim, etc.) handles its own errors and cwd
     if (tuiModeRef.current) return
 
-    const errorPatterns = [
-      /command not found/i,
-      /No such file or directory/i,
-      /Permission denied/i,
-      /not recognized as/i,
-    ]
-
     const cmd = lastCommandRef.current
     if (cmd) {
-      // Check for errors first
-      if (errorPatterns.some(p => p.test(data))) {
-        const capturedCmd = cmd
-        lastCommandRef.current = ''
-        // Send error context to chat sidebar
-        chat.injectFromTerminal(`Command \`${capturedCmd}\` failed: ${data.trim()}`)
-        return
-      }
-
       // Detect successful cd — refresh cwd from PTY (not Electron process.cwd)
       const trimmedCmd = cmd.trim()
       const isCd = trimmedCmd === 'cd' || trimmedCmd.startsWith('cd ')
@@ -540,7 +509,7 @@ export const App: FC = () => {
         }
       }
     }
-  }, [chat.injectFromTerminal, terminalTabs])
+  }, [terminalTabs])
 
   // -------------------------------------------------------------------------
   // Keyboard shortcuts
@@ -896,13 +865,6 @@ export const App: FC = () => {
 
         {/* VS Code-style toggles (top-right) */}
         <div className="titlebar__toggles">
-          <AgentMode
-            enabled={agentLoop.enabled}
-            onToggle={agentLoop.setEnabled}
-            activeIntern={agentLoop.activeIntern}
-            isRunning={agentLoop.isRunning}
-            status={agentLoop.isRunning ? 'running' : 'idle'}
-          />
           <button
             type="button"
             className={`titlebar__toggle ${fileTree.isVisible ? 'titlebar__toggle--active' : ''}`}
@@ -981,10 +943,16 @@ export const App: FC = () => {
           {/* Terminal panel (top) - hide when Claude Code TUI is active unless explicitly shown */}
           {(backendSelector.activeBackend !== 'claude-code' || terminalVisibleInClaudeCode) && (
             <div className="terminal-panel" style={{
-              height: backendSelector.activeBackend === 'claude-code' && terminalVisibleInClaudeCode
-                ? resizablePanels.sizes.terminalArea * 0.5  // Half height when in Claude Code mode
-                : backendSelector.activeBackend === 'claude-code' ? 0 : resizablePanels.sizes.terminalArea,
-              minHeight: backendSelector.activeBackend === 'claude-code' ? 0 : undefined
+              // When chat is closed, terminal fills remaining space via flex: 1
+              // When chat is open, terminal uses fixed resizable height
+              ...((!chat.state.isOpen && backendSelector.activeBackend !== 'claude-code')
+                ? { flex: 1 }
+                : {
+                    height: backendSelector.activeBackend === 'claude-code' && terminalVisibleInClaudeCode
+                      ? resizablePanels.sizes.terminalArea * 0.5
+                      : backendSelector.activeBackend === 'claude-code' ? 0 : resizablePanels.sizes.terminalArea,
+                    minHeight: backendSelector.activeBackend === 'claude-code' ? 0 : undefined,
+                  }),
             }}>
               <div className="terminal-stack">
                 {terminalTabs.state.tabs.map((tab) => {
@@ -1156,14 +1124,14 @@ export const App: FC = () => {
         </div>
 
         {/* ── Right Sidebar (VRM avatar + chat overlay) ── */}
-        {(agentLoop.enabled || chat.state.isOpen || rpMode) && (
-          <>
-            {!rpMode && (
-              <ResizeHandle
-                direction="horizontal"
-                onDrag={(delta) => resizablePanels.updateSize('rightSidebar', -delta)}
-              />
-            )}
+        {/* Avatar sidebar — always visible */}
+        <>
+          {!rpMode && (
+            <ResizeHandle
+              direction="horizontal"
+              onDrag={(delta) => resizablePanels.updateSize('rightSidebar', -delta)}
+            />
+          )}
             <div
               className={`right-sidebar ${rpMode ? 'right-sidebar--rp' : ''}`}
               style={rpMode ? undefined : { width: resizablePanels.sizes.rightSidebar }}
@@ -1242,7 +1210,6 @@ export const App: FC = () => {
               </div>
             </div>
           </>
-        )}
 
         {/* ── File Preview (overlay, replaces chat area when open) ── */}
         {filePreview.state.isOpen && (
@@ -1342,15 +1309,6 @@ export const App: FC = () => {
         </div>
       </div>
 
-      {/* NL routing toast */}
-      {nlToast && (
-        <div className="nl-toast">
-          <span className="nl-toast__icon">&rarr;</span>
-          <span className="nl-toast__text">
-            Sent to AI: {nlToast.length > 40 ? nlToast.slice(0, 40) + '\u2026' : nlToast}
-          </span>
-        </div>
-      )}
     </div>
   )
 }
