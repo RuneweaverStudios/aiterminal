@@ -1,15 +1,14 @@
 /**
  * useSoraCompanion — Sora wake/sleep cycle for Claude Code sessions.
  *
- * SLEEP: Sora monitors terminal output silently.
+ * SLEEP: Sora monitors Claude Code logs + terminal output silently.
  * WAKE:  When Claude finishes a task (idle after activity), Sora:
- *        1. Summarizes what Claude just did
- *        2. Asks "What do you want to do next?"
- *        3. Waits for user response (text or voice)
- *        4. Relays the response to Claude Code via terminal
- *        5. Goes back to sleep
- *
- * Also supports manual text input and status requests at any time.
+ *        1. Reads Claude Code session logs for clean context
+ *        2. Summarizes what Claude just did
+ *        3. Asks "What do you want to do next?"
+ *        4. Waits for user response (text or voice)
+ *        5. Relays the response to Claude Code via terminal
+ *        6. Goes back to sleep
  */
 
 import { useState, useCallback, useEffect, useRef } from 'react'
@@ -40,34 +39,35 @@ export interface UseSoraCompanionOptions {
 // Constants
 // ---------------------------------------------------------------------------
 
-const MAX_BUFFER = 2000
 const MAX_MESSAGES = 30
 const AUTO_STATUS_COOLDOWN_MS = 30_000
 const IDLE_THRESHOLD_MS = 5_000
 const ACTIVITY_CHAR_THRESHOLD = 500
+const MAX_LOG_CONTEXT_CHARS = 3000
+const MAX_PTY_BUFFER = 2000
 
-const STATUS_AND_PROMPT = `Based on the recent terminal output below, do TWO things:
-1. Summarize what just happened in 1-2 sentences (be specific — file names, test results, errors)
+const STATUS_AND_PROMPT = `Based on the Claude Code session log below, do TWO things:
+1. Summarize what Claude just did in 1-2 sentences (be specific — file names, test results, errors, commands)
 2. End with: "What would you like to do next?"
 
-TERMINAL OUTPUT:
+CLAUDE CODE SESSION LOG (most recent messages):
 ---
-{TERMINAL_BUFFER}
+{CONTEXT}
 ---`
 
-const SORA_SYSTEM_PROMPT = `You are Sora, a friendly AI companion watching the user's terminal.
+const SORA_SYSTEM_PROMPT = `You are Sora, a friendly AI companion watching the user's Claude Code session.
 
-RECENT TERMINAL OUTPUT:
+RECENT CONTEXT:
 ---
-{TERMINAL_BUFFER}
+{CONTEXT}
 ---
 
 You can:
-1. Answer questions about what's happening in the terminal or the project
+1. Answer questions about what Claude is doing or the project state
 2. Chat casually — architecture, ideas, opinions
-3. Relay commands to Claude Code — wrap what should be typed in [RELAY]command[/RELAY]
+3. Relay instructions to Claude Code — wrap what should be typed in [RELAY]instruction here[/RELAY]
 
-Only use [RELAY] when the user clearly wants Claude to do something. For questions and chat, just answer.
+Only use [RELAY] when the user wants Claude to do something. For questions and chat, just answer.
 Keep responses to 1-3 sentences.`
 
 // ---------------------------------------------------------------------------
@@ -103,6 +103,47 @@ function extractRelay(text: string): { relay: string | null; display: string } {
   return { relay, display: display || `Sent to Claude: "${relay}"` }
 }
 
+/**
+ * Extract readable context from Claude Code JSONL log messages.
+ * Picks out assistant text, tool calls, and results — skips system noise.
+ */
+function formatLogMessages(messages: any[]): string {
+  const parts: string[] = []
+  let charCount = 0
+
+  // Walk backwards from most recent, collect until we hit the char limit
+  for (let i = messages.length - 1; i >= 0 && charCount < MAX_LOG_CONTEXT_CHARS; i--) {
+    const msg = messages[i]
+    let line = ''
+
+    if (msg.role === 'assistant' && msg.content) {
+      const text = typeof msg.content === 'string'
+        ? msg.content
+        : Array.isArray(msg.content)
+          ? msg.content.filter((b: any) => b.type === 'text').map((b: any) => b.text).join('\n')
+          : ''
+      if (text.trim()) line = `Claude: ${text.trim().slice(0, 500)}`
+    } else if (msg.role === 'user' && msg.content) {
+      const text = typeof msg.content === 'string'
+        ? msg.content
+        : Array.isArray(msg.content)
+          ? msg.content.filter((b: any) => b.type === 'text').map((b: any) => b.text).join('\n')
+          : ''
+      if (text.trim()) line = `User: ${text.trim().slice(0, 200)}`
+    } else if (msg.type === 'tool_result' || msg.role === 'tool') {
+      const text = typeof msg.content === 'string' ? msg.content : ''
+      if (text.trim()) line = `Tool result: ${text.trim().slice(0, 300)}`
+    }
+
+    if (line) {
+      parts.unshift(line)
+      charCount += line.length
+    }
+  }
+
+  return parts.join('\n\n')
+}
+
 // ---------------------------------------------------------------------------
 // Hook
 // ---------------------------------------------------------------------------
@@ -114,20 +155,33 @@ export function useSoraCompanion(options: UseSoraCompanionOptions): UseSoraCompa
   const [isStreaming, setIsStreaming] = useState(false)
   const [soraState, setSoraState] = useState<SoraState>('sleeping')
 
-  // Terminal buffer (rolling, ANSI-stripped)
-  const bufferRef = useRef('')
-  const lastOutputTimeRef = useRef(0)
+  // Context sources
+  const ptyBufferRef = useRef('')         // Fallback: raw PTY output (normal terminal)
+  const claudeLogRef = useRef<any[]>([])  // Primary: Claude Code JSONL messages
+
+  // Activity tracking
   const charsSinceWakeRef = useRef(0)
   const lastWakeTimeRef = useRef(0)
   const idleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const soraStateRef = useRef<SoraState>('sleeping')
   soraStateRef.current = soraState
 
-  // Stable refs for callbacks (avoid stale closures)
+  // Stable refs
   const onSpeakRef = useRef(onSpeak)
   onSpeakRef.current = onSpeak
   const onBubbleRef = useRef(onBubble)
   onBubbleRef.current = onBubble
+
+  /**
+   * Get the best available context string for AI queries.
+   * Prefers Claude Code logs; falls back to PTY buffer.
+   */
+  const getContext = useCallback((): string => {
+    if (claudeLogRef.current.length > 0) {
+      return formatLogMessages(claudeLogRef.current)
+    }
+    return ptyBufferRef.current.slice(-1500) || '(no terminal output captured)'
+  }, [])
 
   // ---------------------------------------------------------------------------
   // AI query helper
@@ -141,7 +195,7 @@ export function useSoraCompanion(options: UseSoraCompanionOptions): UseSoraCompa
     const api = window.electronAPI
     if (!api?.aiQueryStream) return '(AI not available)'
 
-    const prompt = systemPrompt.replace('{TERMINAL_BUFFER}', bufferRef.current.slice(-1500))
+    const prompt = systemPrompt.replace('{CONTEXT}', getContext())
 
     return new Promise<string>((resolve) => {
       let accumulated = ''
@@ -162,10 +216,10 @@ export function useSoraCompanion(options: UseSoraCompanionOptions): UseSoraCompa
         },
       )
     })
-  }, [])
+  }, [getContext])
 
   // ---------------------------------------------------------------------------
-  // Wake cycle: summarize → listen → relay → sleep
+  // Wake cycle
   // ---------------------------------------------------------------------------
 
   const wake = useCallback(async () => {
@@ -176,6 +230,17 @@ export function useSoraCompanion(options: UseSoraCompanionOptions): UseSoraCompa
     if (now - lastWakeTimeRef.current < AUTO_STATUS_COOLDOWN_MS) return
     lastWakeTimeRef.current = now
 
+    // Fetch latest Claude Code logs before summarizing
+    try {
+      const api = window.electronAPI
+      if (api?.getClaudeCodeLog) {
+        const result = await api.getClaudeCodeLog(30)
+        if (result.success && result.messages) {
+          claudeLogRef.current = result.messages
+        }
+      }
+    } catch { /* use whatever we have */ }
+
     setSoraState('summarizing')
     setIsStreaming(true)
 
@@ -185,8 +250,6 @@ export function useSoraCompanion(options: UseSoraCompanionOptions): UseSoraCompa
       setMessages(prev => [...prev, statusMsg].slice(-MAX_MESSAGES))
       onSpeakRef.current?.(response)
       onBubbleRef.current?.(response)
-
-      // Now listening for user response
       setSoraState('listening')
     } catch {
       setSoraState('sleeping')
@@ -198,7 +261,7 @@ export function useSoraCompanion(options: UseSoraCompanionOptions): UseSoraCompa
   }, [isStreaming, queryAI])
 
   // ---------------------------------------------------------------------------
-  // Subscribe to PTY output
+  // Subscribe to PTY output (activity tracking + fallback context)
   // ---------------------------------------------------------------------------
 
   useEffect(() => {
@@ -207,17 +270,14 @@ export function useSoraCompanion(options: UseSoraCompanionOptions): UseSoraCompa
 
     const unsub = api.onAnySessionData((_sessionId, data) => {
       const clean = stripAnsi(data)
-      bufferRef.current = (bufferRef.current + clean).slice(-MAX_BUFFER)
-      lastOutputTimeRef.current = Date.now()
+      ptyBufferRef.current = (ptyBufferRef.current + clean).slice(-MAX_PTY_BUFFER)
       charsSinceWakeRef.current += clean.length
 
-      // Only track idle when sleeping (don't wake during user interaction)
+      // Only track idle when sleeping
       if (soraStateRef.current !== 'sleeping') return
 
-      // Reset idle timer
       if (idleTimerRef.current) clearTimeout(idleTimerRef.current)
       idleTimerRef.current = setTimeout(() => {
-        // Wake if enough activity happened since last wake
         if (charsSinceWakeRef.current > ACTIVITY_CHAR_THRESHOLD) {
           wake()
         }
@@ -231,7 +291,29 @@ export function useSoraCompanion(options: UseSoraCompanionOptions): UseSoraCompa
   }, [wake])
 
   // ---------------------------------------------------------------------------
-  // Send message (user response or manual input)
+  // Subscribe to Claude Code log updates (live context)
+  // ---------------------------------------------------------------------------
+
+  useEffect(() => {
+    const api = window.electronAPI
+    if (!api?.startClaudeCodeLogWatcher || !api?.onClaudeCodeLogUpdated) return
+
+    api.startClaudeCodeLogWatcher().catch(() => {})
+
+    const unsub = api.onClaudeCodeLogUpdated((data) => {
+      if (data.messages) {
+        claudeLogRef.current = data.messages
+      }
+    })
+
+    return () => {
+      unsub?.()
+      api.stopClaudeCodeLogWatcher?.().catch(() => {})
+    }
+  }, [])
+
+  // ---------------------------------------------------------------------------
+  // Send message
   // ---------------------------------------------------------------------------
 
   const sendMessage = useCallback(async (text: string) => {
@@ -242,13 +324,21 @@ export function useSoraCompanion(options: UseSoraCompanionOptions): UseSoraCompa
     setMessages(prev => [...prev, userMsg].slice(-MAX_MESSAGES))
     setIsStreaming(true)
 
-    // If Sora was listening (wake cycle), this is the user's next task
     const wasListening = soraStateRef.current === 'listening'
-    if (wasListening) {
-      setSoraState('relaying')
-    }
+    if (wasListening) setSoraState('relaying')
 
     try {
+      // Refresh Claude logs before responding
+      try {
+        const api = window.electronAPI
+        if (api?.getClaudeCodeLog) {
+          const result = await api.getClaudeCodeLog(30)
+          if (result.success && result.messages) {
+            claudeLogRef.current = result.messages
+          }
+        }
+      } catch { /* use cached */ }
+
       const context = [...messages, userMsg].map(m => ({ role: m.role, content: m.content }))
       const response = await queryAI(SORA_SYSTEM_PROMPT, trimmed, context)
 
@@ -266,7 +356,6 @@ export function useSoraCompanion(options: UseSoraCompanionOptions): UseSoraCompa
       onSpeakRef.current?.(display)
       onBubbleRef.current?.(display)
 
-      // After relaying, go back to sleep
       if (relay || wasListening) {
         setSoraState('sleeping')
       }
@@ -280,12 +369,23 @@ export function useSoraCompanion(options: UseSoraCompanionOptions): UseSoraCompa
   }, [isStreaming, messages, queryAI, getActiveSessionId])
 
   // ---------------------------------------------------------------------------
-  // Manual status (always available)
+  // Manual status
   // ---------------------------------------------------------------------------
 
   const generateStatus = useCallback(async () => {
     lastWakeTimeRef.current = Date.now()
     charsSinceWakeRef.current = 0
+
+    // Refresh logs
+    try {
+      const api = window.electronAPI
+      if (api?.getClaudeCodeLog) {
+        const result = await api.getClaudeCodeLog(30)
+        if (result.success && result.messages) {
+          claudeLogRef.current = result.messages
+        }
+      }
+    } catch { /* use cached */ }
 
     setSoraState('summarizing')
     setIsStreaming(true)
