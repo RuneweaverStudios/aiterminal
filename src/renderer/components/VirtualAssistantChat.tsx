@@ -22,6 +22,7 @@ interface VirtualAssistantChatProps {
   compact?: boolean;
   onRequestStatus?: () => void;
   soraState?: SoraState;
+  voiceListening?: boolean;
 }
 
 /**
@@ -36,6 +37,7 @@ export const VirtualAssistantChat: FC<VirtualAssistantChatProps> = ({
   compact = false,
   onRequestStatus,
   soraState = 'sleeping',
+  voiceListening = false,
 }) => {
   const [input, setInput] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -106,8 +108,8 @@ export const VirtualAssistantChat: FC<VirtualAssistantChatProps> = ({
             type="text"
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            placeholder={soraState === 'listening' ? 'Tell me what to do next...' : soraState === 'sleeping' ? 'Ask Sora anything...' : 'Sora is thinking...'}
-            className="virtual-assistant-chat__input-field"
+            placeholder={voiceListening ? 'Listening...' : soraState === 'listening' ? 'Tell me what to do next...' : soraState === 'sleeping' ? 'Ask Sora anything...' : 'Sora is thinking...'}
+            className={`virtual-assistant-chat__input-field${voiceListening ? ' virtual-assistant-chat__input-field--listening' : ''}`}
             disabled={isStreaming}
           />
           {onRequestStatus && (

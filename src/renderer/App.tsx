@@ -135,7 +135,12 @@ export const App: FC = () => {
   })
 
   // Voice I/O for TTS (Amica-style voice chat)
-  const voice = useVoiceIO(undefined, agentLoop.activeIntern || DEFAULT_INTERN_ID)
+  // Voice transcript → send to Sora when she's listening
+  const soraCompanionRef = useRef<{ sendMessage: (text: string) => Promise<void> } | null>(null)
+  const voice = useVoiceIO(
+    (transcript) => { soraCompanionRef.current?.sendMessage(transcript) },
+    agentLoop.activeIntern || DEFAULT_INTERN_ID,
+  )
 
   // Speech bubbles for VRM avatar
   const speechBubbles = useSpeechBubbles()
@@ -215,6 +220,28 @@ export const App: FC = () => {
     onSpeak: (text) => { voice.speak(text).catch(() => {}) },
     onBubble: (text) => { speechBubbles.addBubble(text) },
   })
+  soraCompanionRef.current = soraCompanion
+
+  // Auto-listen when Sora enters "listening" state (after her TTS finishes)
+  // Auto-stop after 10s of silence
+  useEffect(() => {
+    if (soraCompanion.soraState !== 'listening') {
+      if (voice.listening) voice.stopListening()
+      return
+    }
+    // Small delay to let TTS finish before opening mic (avoids echo)
+    const startTimer = setTimeout(() => {
+      if (!voice.listening) voice.startListening()
+    }, 500)
+    // Auto-stop after 10 seconds of silence
+    const silenceTimer = setTimeout(() => {
+      voice.stopListening()
+    }, 10_500) // 500ms start delay + 10s listen window
+    return () => {
+      clearTimeout(startTimer)
+      clearTimeout(silenceTimer)
+    }
+  }, [soraCompanion.soraState]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Active terminal session cwd (file tree + picker); derived from active tab
   const activeTabCwd = useMemo(() => {
@@ -1209,6 +1236,7 @@ export const App: FC = () => {
                   compact={!rpMode}
                   onRequestStatus={rpMode ? undefined : () => soraCompanion.generateStatus()}
                   soraState={rpMode ? undefined : soraCompanion.soraState}
+                  voiceListening={!rpMode && voice.listening}
                 />
               </div>
             </div>

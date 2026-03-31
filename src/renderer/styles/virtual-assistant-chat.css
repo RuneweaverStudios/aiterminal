@@ -401,7 +401,14 @@
   50% { box-shadow: 0 0 0 6px rgba(239, 68, 68, 0); }
 }
 
-.virtual-assistant-chat--compact .virtual-assistant-chat__voice-btn {
-  width: 32px;
-  height: 32px;
+/* Listening indicator — input glows when mic is active */
+.virtual-assistant-chat__input-field.virtual-assistant-chat__input-field--listening {
+  border-color: rgba(239, 68, 68, 0.6);
+  box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.15);
+  animation: listening-pulse 2s ease-in-out infinite;
+}
+
+@keyframes listening-pulse {
+  0%, 100% { box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.15); }
+  50% { box-shadow: 0 0 0 5px rgba(239, 68, 68, 0.05); }
 }
