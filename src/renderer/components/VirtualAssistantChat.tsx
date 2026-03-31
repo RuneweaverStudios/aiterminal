@@ -17,6 +17,8 @@ interface VirtualAssistantChatProps {
   onSendMessage?: (message: string) => void;
   isStreaming?: boolean;
   onEndRp?: () => void;
+  compact?: boolean;
+  onRequestStatus?: () => void;
 }
 
 /**
@@ -28,6 +30,8 @@ export const VirtualAssistantChat: FC<VirtualAssistantChatProps> = ({
   onSendMessage,
   isStreaming = false,
   onEndRp,
+  compact = false,
+  onRequestStatus,
 }) => {
   const [input, setInput] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -47,7 +51,7 @@ export const VirtualAssistantChat: FC<VirtualAssistantChatProps> = ({
   };
 
   return (
-    <div ref={containerRef} className="virtual-assistant-chat">
+    <div ref={containerRef} className={`virtual-assistant-chat${compact ? ' virtual-assistant-chat--compact' : ''}`}>
       {/* Chat Messages - Scrollable area */}
       <div className="virtual-assistant-chat__messages">
         {messages.map((msg, idx) => (
@@ -102,6 +106,20 @@ export const VirtualAssistantChat: FC<VirtualAssistantChatProps> = ({
             className="virtual-assistant-chat__input-field"
             disabled={isStreaming}
           />
+          {onRequestStatus && (
+            <button
+              type="button"
+              onClick={onRequestStatus}
+              className="virtual-assistant-chat__status-btn"
+              disabled={isStreaming}
+              title="Get status update"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <circle cx="12" cy="12" r="10" />
+                <path d="M12 6v6l4 2" />
+              </svg>
+            </button>
+          )}
           <button
             type="submit"
             className="virtual-assistant-chat__input-send"

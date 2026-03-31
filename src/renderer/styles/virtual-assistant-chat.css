@@ -289,3 +289,76 @@
   background: rgba(255, 50, 50, 0.3);
   border-color: rgba(255, 50, 50, 0.7);
 }
+
+/* Status button */
+.virtual-assistant-chat__status-btn {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: rgba(16, 185, 129, 0.15);
+  border: 1px solid rgba(16, 185, 129, 0.3);
+  color: #10b981;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: all 0.2s ease;
+}
+
+.virtual-assistant-chat__status-btn:hover:not(:disabled) {
+  background: rgba(16, 185, 129, 0.3);
+  border-color: rgba(16, 185, 129, 0.6);
+}
+
+.virtual-assistant-chat__status-btn:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+/* Compact mode — always-on alongside avatar */
+.virtual-assistant-chat--compact .virtual-assistant-chat__messages {
+  padding-top: 60%;
+  padding-bottom: 64px;
+}
+
+.virtual-assistant-chat--compact .virtual-assistant-chat__message-bubble {
+  padding: 8px 12px;
+  border-radius: 14px;
+}
+
+.virtual-assistant-chat--compact .virtual-assistant-chat__message-content {
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.virtual-assistant-chat--compact .virtual-assistant-chat__input {
+  padding: 8px 10px;
+  gap: 6px;
+}
+
+.virtual-assistant-chat--compact .virtual-assistant-chat__input-field {
+  padding: 8px 12px;
+  font-size: 12px;
+  border-radius: 20px;
+}
+
+.virtual-assistant-chat--compact .virtual-assistant-chat__input-send {
+  width: 32px;
+  height: 32px;
+}
+
+.virtual-assistant-chat--compact .virtual-assistant-chat__input-send svg {
+  width: 14px;
+  height: 14px;
+}
+
+.virtual-assistant-chat--compact .virtual-assistant-chat__status-btn {
+  width: 32px;
+  height: 32px;
+}
+
+.virtual-assistant-chat--compact .virtual-assistant-chat__message-time {
+  font-size: 9px;
+  margin-top: 4px;
+}

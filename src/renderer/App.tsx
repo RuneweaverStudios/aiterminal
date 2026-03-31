@@ -12,6 +12,7 @@ import { useState, useCallback, useEffect, useRef, useMemo } from 'react'
 import type { FC } from 'react'
 import type { AIResponse } from '@/ai/types'
 import type { FilePickerResult } from '@/types/file-context'
+import type { ChatMessage } from '@/types/chat'
 import { sanitizeInput, detectPromptInjection } from '@/renderer/utils/sanitizeInput'
 import { useVoiceIO } from '@/renderer/hooks/useVoiceIO'
 
@@ -50,6 +51,7 @@ import { VirtualAssistantChat } from '@/renderer/components/VirtualAssistantChat
 import { useAgentLoop } from '@/renderer/hooks/useAgentLoop'
 import { useClaudeCodeComments } from '@/renderer/hooks/useClaudeCodeComments'
 import { useElevenLabsAgent } from '@/renderer/hooks/useElevenLabsAgent'
+import { useSoraCompanion } from '@/renderer/hooks/useSoraCompanion'
 import { preloadVRMModels } from '@/renderer/vrm-preloader'
 import { AVAILABLE_VRM_MODELS } from '@/renderer/vrm-models'
 
@@ -135,9 +137,10 @@ export const App: FC = () => {
   // Voice I/O for TTS (Amica-style voice chat)
   const voice = useVoiceIO(undefined, agentLoop.activeIntern || DEFAULT_INTERN_ID)
 
-  // Claude Code comments - contextual voice feedback during Claude Code sessions
   // Speech bubbles for VRM avatar
   const speechBubbles = useSpeechBubbles()
+
+  // Claude Code comments - contextual voice feedback during Claude Code sessions
 
   // Listen for AI response events to auto-speak (use ref to avoid re-registering on every render)
   const voiceSpeakRef = useRef(voice.speak)
@@ -205,6 +208,13 @@ export const App: FC = () => {
       setTuiMode(false)
     }
   }, [backendSelector.activeBackend, tuiMode])
+
+  // Sora companion — terminal-aware conversational AI
+  const soraCompanion = useSoraCompanion({
+    getActiveSessionId: () => terminalTabs.getActiveSessionId(),
+    onSpeak: (text) => { voice.speak(text).catch(() => {}) },
+    onBubble: (text) => { speechBubbles.addBubble(text) },
+  })
 
   // Active terminal session cwd (file tree + picker); derived from active tab
   const activeTabCwd = useMemo(() => {
@@ -1177,36 +1187,28 @@ export const App: FC = () => {
                 />
 
                 {/* Virtual Assistant Chat - transparent overlay inside avatar container */}
-                {(showVrmChat || rpMode) && (
-                  <VirtualAssistantChat
-                    messages={rpMode
-                      ? elevenAgent.messages.map((m, i) => ({
-                          id: `agent-${i}`,
-                          role: m.role === 'agent' ? 'assistant' as const : 'user' as const,
-                          content: m.text,
-                          timestamp: m.timestamp,
-                        }))
-                      : speechBubbles.bubbles.map((b, i) => ({
-                          id: b.id || `bubble-${i}`,
-                          role: 'assistant' as const,
-                          content: b.message,
-                          timestamp: b.timestamp,
-                        }))
-                    }
-                    onSendMessage={rpMode
-                      ? (msg) => elevenAgent.sendText(msg)
-                      : async (msg) => {
-                          await chat.sendMessage(msg)
-                          speechBubbles.addBubble(msg)
-                        }
-                    }
-                    isStreaming={rpMode ? elevenAgent.isSpeaking : chat.state.isStreaming}
-                    onEndRp={rpMode ? async () => {
-                      setRpMode(false);
-                      await elevenAgent.stop();
-                    } : undefined}
-                  />
-                )}
+                <VirtualAssistantChat
+                  messages={rpMode
+                    ? elevenAgent.messages.map((m, i) => ({
+                        id: `agent-${i}`,
+                        role: m.role === 'agent' ? 'assistant' as const : 'user' as const,
+                        content: m.text,
+                        timestamp: m.timestamp,
+                      }))
+                    : soraCompanion.messages as ChatMessage[]
+                  }
+                  onSendMessage={rpMode
+                    ? (msg) => elevenAgent.sendText(msg)
+                    : (msg) => soraCompanion.sendMessage(msg)
+                  }
+                  isStreaming={rpMode ? elevenAgent.isSpeaking : soraCompanion.isStreaming}
+                  onEndRp={rpMode ? async () => {
+                    setRpMode(false);
+                    await elevenAgent.stop();
+                  } : undefined}
+                  compact={!rpMode}
+                  onRequestStatus={rpMode ? undefined : () => soraCompanion.generateStatus()}
+                />
               </div>
             </div>
           </>

@@ -148,9 +148,21 @@ Object.defineProperty(window, 'electronAPI', {
     }),
     getThemes: vi.fn().mockResolvedValue([]),
     setTheme: vi.fn().mockResolvedValue(undefined),
+    onAnySessionData: vi.fn().mockReturnValue(() => {}),
+    aiQueryStream: vi.fn().mockResolvedValue(undefined),
+    writeToSession: vi.fn(),
   },
   writable: true,
 })
+
+// jsdom doesn't have AudioContext or scrollIntoView
+window.AudioContext = vi.fn().mockImplementation(() => ({
+  createGain: vi.fn().mockReturnValue({ connect: vi.fn(), gain: { value: 1 } }),
+  createMediaElementSource: vi.fn().mockReturnValue({ connect: vi.fn() }),
+  createAnalyser: vi.fn().mockReturnValue({ connect: vi.fn(), fftSize: 256, frequencyBinCount: 128, getByteFrequencyData: vi.fn() }),
+  destination: {},
+})) as any
+Element.prototype.scrollIntoView = vi.fn()
 
 import { App } from './App'
 
